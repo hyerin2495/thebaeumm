@@ -1,0 +1,31 @@
+<%- include('../partials/header') %>
+
+<div class="card" style="max-width:560px;">
+  <div class="card-header">
+    <h2>학생 명단 일괄등록</h2>
+  </div>
+  <div class="card-body">
+    <% if (flash) { %>
+      <div class="flash <%= flash.type %>" style="margin:0 0 16px;"><%= flash.message %></div>
+    <% } %>
+
+    <p class="text-muted" style="font-size:13px; margin-top:0;">
+      학생명/학교/학년/학생연락처/학부모명/학부모연락처/메모 컬럼이 포함된 엑셀(.xlsx) 또는 CSV 파일을 업로드하세요.
+      다음 단계에서 컬럼을 직접 매칭합니다.
+    </p>
+
+    <form action="/students/import" method="POST" enctype="multipart/form-data">
+      <div class="form-group">
+        <label for="file">학생 명단 파일 (.xlsx 또는 .csv)</label>
+        <input type="file" id="file" name="file" accept=".xlsx,.xls,.csv" required>
+      </div>
+
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:20px;">
+        <a href="/students" class="btn btn-secondary">취소</a>
+        <button type="submit" class="btn btn-primary">업로드 및 분석</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

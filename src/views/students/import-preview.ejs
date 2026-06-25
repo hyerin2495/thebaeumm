@@ -1,0 +1,91 @@
+<%- include('../partials/header') %>
+
+<div class="card">
+  <div class="card-header">
+    <h2>등록 확인</h2>
+    <span class="text-muted" style="font-size:13px;"><%= originalName %></span>
+  </div>
+  <div class="card-body">
+
+    <div class="stat-grid" style="grid-template-columns: repeat(3,1fr); margin-bottom:20px;">
+      <div class="stat-card">
+        <div class="label">정상 인식된 학생</div>
+        <div class="value accent-teal"><%= totalCount %>명</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">기존 학생과 중복 의심</div>
+        <div class="value <%= duplicateCount > 0 ? 'accent-warn' : '' %>"><%= duplicateCount %>명</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">인식 실패 행</div>
+        <div class="value <%= errorCount > 0 ? 'accent-danger' : '' %>"><%= errorCount %>건</div>
+      </div>
+    </div>
+
+    <% if (duplicateCount > 0) { %>
+    <div class="flash error" style="margin-bottom:16px;">
+      학생명+학부모연락처 조합이 이미 등록된 학생과 동일한 경우 "중복"으로 표시됩니다.
+      (학부모연락처만 같은 경우는 형제 관계로 보고 중복 처리하지 않습니다.)
+    </div>
+    <% } %>
+
+    <% if (errorCount > 0) { %>
+    <div class="flash error" style="margin-bottom:16px;">
+      <%= errorCount %>개 행에서 학생명 또는 학부모연락처를 인식하지 못해 제외되었습니다.
+    </div>
+    <% } %>
+
+    <div style="max-height:480px; overflow-y:auto; margin-bottom:20px;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>학생명</th>
+          <th>학교</th>
+          <th>학년</th>
+          <th>학생연락처</th>
+          <th>학부모명</th>
+          <th>학부모연락처</th>
+          <th class="center">비고</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% students.forEach(s => { %>
+        <tr style="<%= s.isDuplicate ? 'background:#fff8e8;' : '' %>">
+          <td><strong><%= s.name %></strong></td>
+          <td class="text-muted"><%= s.schoolName || '-' %></td>
+          <td class="text-muted"><%= s.grade || '-' %></td>
+          <td><%= s.studentPhone || '-' %></td>
+          <td><%= s.parentName || '-' %></td>
+          <td><%= s.parentPhone %></td>
+          <td class="center">
+            <% if (s.isDuplicate) { %>
+              <span class="badge badge-unmatched">중복의심 (#<%= s.existingId %>)</span>
+            <% } else { %>
+              <span class="badge badge-matched">신규</span>
+            <% } %>
+          </td>
+        </tr>
+        <% }) %>
+      </tbody>
+    </table>
+    </div>
+
+    <form action="/students/import/confirm" method="POST">
+      <input type="hidden" name="uploadId" value="<%= uploadId %>">
+
+      <% if (duplicateCount > 0) { %>
+      <div class="form-group" style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" id="skip_duplicates" name="skip_duplicates" checked style="width:auto;">
+        <label for="skip_duplicates" style="margin:0;">중복의심 학생은 등록하지 않고 건너뛰기 (체크 해제 시 중복이어도 새로 등록됩니다)</label>
+      </div>
+      <% } %>
+
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+        <a href="/students/import" class="btn btn-secondary">취소하고 다시 업로드</a>
+        <button type="submit" class="btn btn-primary">등록 실행 (<%= totalCount %>명)</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

@@ -1,0 +1,151 @@
+<%- include('../partials/header') %>
+
+<div class="card" style="max-width:760px;">
+  <div class="card-header">
+    <h2>컬럼 매핑</h2>
+    <span class="text-muted" style="font-size:13px;"><%= originalName %> · 총 <%= totalRows %>행</span>
+  </div>
+  <div class="card-body">
+
+    <p class="text-muted" style="font-size:13px; margin-top:0;">
+      파일의 각 열이 어떤 항목에 해당하는지 선택해주세요.
+    </p>
+
+    <div style="overflow-x:auto; margin-bottom:20px;">
+      <table class="data-table" style="font-size:12.5px;">
+        <thead>
+          <tr>
+            <% headerRow.forEach((h, idx) => { %>
+              <th>열 <%= idx + 1 %><br><span class="text-muted"><%= h %></span></th>
+            <% }) %>
+          </tr>
+        </thead>
+        <tbody>
+          <% previewRows.forEach(row => { %>
+          <tr>
+            <% headerRow.forEach((h, idx) => { %>
+              <td><%= row[idx] != null ? row[idx] : '' %></td>
+            <% }) %>
+          </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+
+    <form action="/students/import/mapping" method="POST">
+      <input type="hidden" name="uploadId" value="<%= uploadId %>">
+
+      <div class="form-group" style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" id="has_header" name="has_header" checked style="width:auto;">
+        <label for="has_header" style="margin:0;">첫 번째 행은 헤더(제목)입니다</label>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="col_name">학생명 열 *</label>
+          <select id="col_name" name="col_name" required>
+            <% headerRow.forEach((h, idx) => { %>
+              <option value="<%= idx %>"><%= '열 ' + (idx+1) + ' (' + h + ')' %></option>
+            <% }) %>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="col_parent_phone">학부모 연락처 열 *</label>
+          <select id="col_parent_phone" name="col_parent_phone" required>
+            <% headerRow.forEach((h, idx) => { %>
+              <option value="<%= idx %>"><%= '열 ' + (idx+1) + ' (' + h + ')' %></option>
+            <% }) %>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="col_school">학교 열</label>
+          <select id="col_school" name="col_school">
+            <option value="">사용 안함</option>
+            <% headerRow.forEach((h, idx) => { %>
+              <option value="<%= idx %>"><%= '열 ' + (idx+1) + ' (' + h + ')' %></option>
+            <% }) %>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="col_grade">학년 열</label>
+          <select id="col_grade" name="col_grade">
+            <option value="">사용 안함</option>
+            <% headerRow.forEach((h, idx) => { %>
+              <option value="<%= idx %>"><%= '열 ' + (idx+1) + ' (' + h + ')' %></option>
+            <% }) %>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="col_student_phone">학생 연락처 열</label>
+          <select id="col_student_phone" name="col_student_phone">
+            <option value="">사용 안함</option>
+            <% headerRow.forEach((h, idx) => { %>
+              <option value="<%= idx %>"><%= '열 ' + (idx+1) + ' (' + h + ')' %></option>
+            <% }) %>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="col_parent_name">학부모명 열</label>
+          <select id="col_parent_name" name="col_parent_name">
+            <option value="">사용 안함</option>
+            <% headerRow.forEach((h, idx) => { %>
+              <option value="<%= idx %>"><%= '열 ' + (idx+1) + ' (' + h + ')' %></option>
+            <% }) %>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="col_memo">메모 열</label>
+        <select id="col_memo" name="col_memo">
+          <option value="">사용 안함</option>
+          <% headerRow.forEach((h, idx) => { %>
+            <option value="<%= idx %>"><%= '열 ' + (idx+1) + ' (' + h + ')' %></option>
+          <% }) %>
+        </select>
+      </div>
+
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:8px;">
+        <a href="/students/import" class="btn btn-secondary">다시 업로드</a>
+        <button type="submit" class="btn btn-primary">다음: 미리보기</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  const headers = <%- JSON.stringify(headerRow.map(h => String(h || ''))) %>;
+
+  function guessColumn(keywords) {
+    for (let i = 0; i < headers.length; i++) {
+      const h = headers[i].toLowerCase();
+      if (keywords.some(k => h.includes(k))) return i;
+    }
+    return null;
+  }
+
+  const guesses = {
+    col_name: guessColumn(['학생명', '학생이름', '성명', '이름']),
+    col_school: guessColumn(['학교']),
+    col_grade: guessColumn(['학년']),
+    col_student_phone: guessColumn(['학생연락처', '학생전화', '학생번호']),
+    col_parent_name: guessColumn(['학부모명', '부모명', '보호자']),
+    col_parent_phone: guessColumn(['학부모연락처', '학부모전화', '부모연락처', '보호자연락처']),
+    col_memo: guessColumn(['메모', '비고']),
+  };
+
+  Object.keys(guesses).forEach(id => {
+    if (guesses[id] != null) {
+      const el = document.getElementById(id);
+      if (el) el.value = String(guesses[id]);
+    }
+  });
+</script>
+
+<%- include('../partials/footer') %>
