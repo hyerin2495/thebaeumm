@@ -1,0 +1,64 @@
+<%- include('../partials/header') %>
+
+<div class="card" style="max-width:640px;">
+  <div class="card-header">
+    <h2><%= student ? '학생 정보 수정' : '신규 학생 등록' %></h2>
+  </div>
+  <div class="card-body">
+    <% if (flash) { %>
+      <div class="flash <%= flash.type %>" style="margin:0 0 16px;"><%= flash.message %></div>
+    <% } %>
+
+    <form action="<%= formAction %>" method="POST">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="name">학생명 *</label>
+          <input type="text" id="name" name="name" required value="<%= student ? student.name || '' : '' %>">
+        </div>
+        <div class="form-group">
+          <label for="grade">학년</label>
+          <select id="grade" name="grade">
+            <option value="">선택 안함</option>
+            <% ['중1','중2','중3','고1','고2','고3'].forEach(g => { %>
+              <option value="<%= g %>" <%= student && student.grade === g ? 'selected' : '' %>><%= g %></option>
+            <% }) %>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="school_name">학교</label>
+        <input type="text" id="school_name" name="school_name" placeholder="예: 아산중학교" value="<%= student ? student.school_name || '' : '' %>">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="parent_name">학부모명</label>
+          <input type="text" id="parent_name" name="parent_name" value="<%= student ? student.parent_name || '' : '' %>">
+        </div>
+        <div class="form-group">
+          <label for="parent_phone">학부모 연락처 *</label>
+          <input type="tel" id="parent_phone" name="parent_phone" required placeholder="010-0000-0000" value="<%= student ? student.parent_phone || '' : '' %>">
+          <div class="form-help">교재비 안내 SMS가 이 번호로 발송됩니다.</div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="student_phone">학생 연락처</label>
+        <input type="tel" id="student_phone" name="student_phone" placeholder="010-0000-0000 (선택)" value="<%= student ? student.student_phone || '' : '' %>">
+      </div>
+
+      <div class="form-group">
+        <label for="memo">메모</label>
+        <textarea id="memo" name="memo" placeholder="특이사항 (선택)"><%= student ? student.memo || '' : '' %></textarea>
+      </div>
+
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:8px;">
+        <a href="/students" class="btn btn-secondary">취소</a>
+        <button type="submit" class="btn btn-primary"><%= student ? '수정 완료' : '등록하기' %></button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

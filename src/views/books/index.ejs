@@ -1,0 +1,89 @@
+<%- include('../partials/header') %>
+
+<div class="toolbar">
+  <form class="filter-bar" method="GET" action="/books">
+    <input type="text" name="keyword" placeholder="교재명 / 출판사 검색" value="<%= filters.keyword %>">
+    <select name="subject">
+      <option value="">전체 과목</option>
+      <% subjectList.forEach(s => { %>
+        <option value="<%= s.subject %>" <%= filters.subject === s.subject ? 'selected' : '' %>><%= s.subject %></option>
+      <% }) %>
+    </select>
+    <select name="status">
+      <option value="active" <%= filters.status === 'active' ? 'selected' : '' %>>사용중</option>
+      <option value="inactive" <%= filters.status === 'inactive' ? 'selected' : '' %>>비활성</option>
+      <option value="all" <%= filters.status === 'all' ? 'selected' : '' %>>전체</option>
+    </select>
+    <button type="submit" class="btn btn-secondary btn-sm">검색</button>
+  </form>
+  <a href="/books/new" class="btn btn-primary">+ 교재 등록</a>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2>교재 목록</h2>
+    <span class="text-muted" style="font-size:13px;">총 <%= pagination.total.toLocaleString() %>종</span>
+  </div>
+
+  <% if (books.length === 0) { %>
+    <div class="empty-state">
+      <div class="icon">▥</div>
+      <p>조건에 맞는 교재가 없습니다.</p>
+    </div>
+  <% } else { %>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>교재명</th>
+        <th>과목</th>
+        <th>출판사</th>
+        <th class="num">단가</th>
+        <th class="center">청구 사용횟수</th>
+        <th class="center">상태</th>
+        <th class="center">관리</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% books.forEach(b => { %>
+      <tr>
+        <td><strong><%= b.name %></strong></td>
+        <td class="text-muted"><%= b.subject || '-' %></td>
+        <td class="text-muted"><%= b.publisher || '-' %></td>
+        <td class="num"><%= b.price.toLocaleString() %>원</td>
+        <td class="center text-muted"><%= b.used_count %>회</td>
+        <td class="center">
+          <span class="badge badge-<%= b.status === 'active' ? 'active' : 'inactive' %>"><%= b.status === 'active' ? '사용중' : '비활성' %></span>
+        </td>
+        <td class="center">
+          <a href="/books/<%= b.id %>/edit" class="btn btn-secondary btn-sm">수정</a>
+          <% if (b.status === 'active') { %>
+            <form action="/books/<%= b.id %>/deactivate" method="POST" style="display:inline;" onsubmit="return confirm('<%= b.name %> 교재를 비활성화하시겠습니까?');">
+              <button type="submit" class="btn btn-danger btn-sm">비활성화</button>
+            </form>
+          <% } else { %>
+            <form action="/books/<%= b.id %>/reactivate" method="POST" style="display:inline;">
+              <button type="submit" class="btn btn-secondary btn-sm">재활성화</button>
+            </form>
+          <% } %>
+        </td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <% } %>
+</div>
+
+<% if (pagination.totalPages > 1) { %>
+<div class="pagination">
+  <% for (let p = 1; p <= pagination.totalPages; p++) { %>
+    <% const qs = new URLSearchParams({...filters, page: p}).toString(); %>
+    <% if (p === pagination.page) { %>
+      <span class="current"><%= p %></span>
+    <% } else { %>
+      <a href="/books?<%= qs %>"><%= p %></a>
+    <% } %>
+  <% } %>
+</div>
+<% } %>
+
+<%- include('../partials/footer') %>

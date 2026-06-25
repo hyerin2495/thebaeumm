@@ -1,0 +1,131 @@
+<%- include('../partials/header') %>
+
+<div class="card" style="max-width:760px;">
+  <div class="card-header">
+    <h2>컬럼 매핑</h2>
+    <span class="text-muted" style="font-size:13px;"><%= originalName %> · 총 <%= totalRows %>행</span>
+  </div>
+  <div class="card-body">
+
+    <p class="text-muted" style="font-size:13px; margin-top:0;">
+      파일의 각 열이 어떤 항목에 해당하는지 선택해주세요. 한 번 설정하면 다음에도 같은 형식 파일은 동일하게 적용됩니다.<br>
+      ※ 은행 거래내역은 보통 입금자명이 따로 없고 "거래내용"란에 적혀 나옵니다. (예: 학생이름+학교+학년)
+    </p>
+
+    <div style="overflow-x:auto; margin-bottom:20px;">
+      <table class="data-table" style="font-size:12.5px;">
+        <thead>
+          <tr>
+            <% headerRow.forEach((h, idx) => { %>
+              <th>열 <%= idx + 1 %><br><span class="text-muted"><%= h %></span></th>
+            <% }) %>
+          </tr>
+        </thead>
+        <tbody>
+          <% previewRows.forEach(row => { %>
+          <tr>
+            <% headerRow.forEach((h, idx) => { %>
+              <td><%= row[idx] != null ? row[idx] : '' %></td>
+            <% }) %>
+          </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+
+    <form action="/payments/mapping" method="POST">
+      <input type="hidden" name="uploadId" value="<%= uploadId %>">
+
+      <div class="form-group" style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" id="has_header" name="has_header" checked style="width:auto;">
+        <label for="has_header" style="margin:0;">첫 번째 행은 헤더(제목)입니다</label>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="col_datetime">거래일시 열 *</label>
+          <select id="col_datetime" name="col_datetime" required>
+            <% headerRow.forEach((h, idx) => { %>
+              <option value="<%= idx %>"><%= '열 ' + (idx+1) + ' (' + h + ')' %></option>
+            <% }) %>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="col_depositor">입금자 식별 열 * <span class="text-muted">(거래내용/거래기록사항 등)</span></label>
+          <select id="col_depositor" name="col_depositor" required>
+            <% headerRow.forEach((h, idx) => { %>
+              <option value="<%= idx %>"><%= '열 ' + (idx+1) + ' (' + h + ')' %></option>
+            <% }) %>
+          </select>
+          <div class="form-help">보통 "거래내용" 컬럼에 학생이름/학교/학년이 함께 적혀 들어옵니다.</div>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="col_deposit_amount">입금금액 열 *</label>
+          <select id="col_deposit_amount" name="col_deposit_amount" required>
+            <% headerRow.forEach((h, idx) => { %>
+              <option value="<%= idx %>"><%= '열 ' + (idx+1) + ' (' + h + ')' %></option>
+            <% }) %>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="col_withdraw_amount">출금금액 열 <span class="text-muted">(선택)</span></label>
+          <select id="col_withdraw_amount" name="col_withdraw_amount">
+            <option value="">사용 안함</option>
+            <% headerRow.forEach((h, idx) => { %>
+              <option value="<%= idx %>"><%= '열 ' + (idx+1) + ' (' + h + ')' %></option>
+            <% }) %>
+          </select>
+          <div class="form-help">출금금액 열을 지정하면 출금 거래(이체/수수료 등) 행은 자동으로 제외됩니다.</div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="col_memo">거래메모 열 (선택)</label>
+        <select id="col_memo" name="col_memo">
+          <option value="">사용 안함</option>
+          <% headerRow.forEach((h, idx) => { %>
+            <option value="<%= idx %>"><%= '열 ' + (idx+1) + ' (' + h + ')' %></option>
+          <% }) %>
+        </select>
+      </div>
+
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:8px;">
+        <a href="/payments/upload" class="btn btn-secondary">다시 업로드</a>
+        <button type="submit" class="btn btn-primary">다음: 미리보기</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  // 헤더명 기반으로 그럴듯한 컬럼을 자동 선택 (사용자가 다시 바꿀 수 있음)
+  const headers = <%- JSON.stringify(headerRow.map(h => String(h || ''))) %>;
+
+  function guessColumn(keywords) {
+    for (let i = 0; i < headers.length; i++) {
+      const h = headers[i].toLowerCase();
+      if (keywords.some(k => h.includes(k))) return i;
+    }
+    return null;
+  }
+
+  const guesses = {
+    col_datetime: guessColumn(['일시', '날짜', 'date', '거래일']),
+    col_depositor: guessColumn(['거래내용', '거래기록', '입금자', '성명', '이름', 'name', '보낸']),
+    col_deposit_amount: guessColumn(['입금금액', '입금액', 'deposit']),
+    col_withdraw_amount: guessColumn(['출금금액', '출금액', 'withdraw']),
+    col_memo: guessColumn(['거래메모', '메모', 'memo', '비고']),
+  };
+
+  Object.keys(guesses).forEach(id => {
+    if (guesses[id] != null) {
+      const el = document.getElementById(id);
+      if (el) el.value = String(guesses[id]);
+    }
+  });
+</script>
+
+<%- include('../partials/footer') %>

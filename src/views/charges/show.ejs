@@ -1,0 +1,114 @@
+<%- include('../partials/header') %>
+
+<% if (flash) { %>
+  <div class="flash <%= flash.type %>" style="margin:0 0 16px;"><%= flash.message %></div>
+<% } %>
+
+<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+  <div>
+    <h2 style="margin:0 0 4px; font-size:18px;"><%= charge.student_name %> 학생 청구 #<%= charge.id %></h2>
+    <div class="text-muted" style="font-size:13px;"><%= charge.school_name || '-' %> <%= charge.grade || '' %> · 학부모 <%= charge.parent_name || '-' %> (<%= charge.parent_phone %>)</div>
+  </div>
+  <span class="badge badge-<%= charge.status %>" style="font-size:13px; padding:5px 12px;"><%= statusLabel[charge.status] %></span>
+</div>
+
+<div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:20px;">
+  <div class="card">
+    <div class="card-body">
+      <div class="text-muted" style="font-size:12.5px; margin-bottom:4px;">청구금액</div>
+      <div style="font-size:22px; font-weight:800; color:var(--navy-800);"><%= charge.total_amount.toLocaleString() %>원</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-body">
+      <div class="text-muted" style="font-size:12.5px; margin-bottom:4px;">입금기한</div>
+      <div style="font-size:22px; font-weight:800;"><%= charge.due_date %></div>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header"><h2>청구 교재 목록</h2></div>
+  <table class="data-table">
+    <thead>
+      <tr><th>교재명</th><th>과목</th><th class="num">단가</th><th class="center">수량</th><th class="num">금액</th></tr>
+    </thead>
+    <tbody>
+      <% items.forEach(i => { %>
+      <tr>
+        <td><%= i.book_name %></td>
+        <td class="text-muted"><%= i.subject %></td>
+        <td class="num"><%= i.unit_price.toLocaleString() %>원</td>
+        <td class="center"><%= i.quantity %></td>
+        <td class="num"><%= i.line_amount.toLocaleString() %>원</td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header"><h2>입금 매칭 내역</h2></div>
+  <% if (matches.length === 0) { %>
+    <div class="empty-state"><p>매칭된 입금 내역이 없습니다.</p></div>
+  <% } else { %>
+  <table class="data-table">
+    <thead>
+      <tr><th>거래일시</th><th>입금자명</th><th class="num">거래금액</th><th class="num">매칭금액</th><th class="center">방식</th></tr>
+    </thead>
+    <tbody>
+      <% matches.forEach(m => { %>
+      <tr>
+        <td><%= m.txn_datetime %></td>
+        <td><%= m.depositor_name %></td>
+        <td class="num"><%= m.txn_amount.toLocaleString() %>원</td>
+        <td class="num"><%= m.matched_amount.toLocaleString() %>원</td>
+        <td class="center"><span class="badge badge-active"><%= m.match_type === 'auto' ? '자동' : '수동' %></span></td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <div style="padding:12px 20px; border-top:1px solid var(--border-color); display:flex; justify-content:space-between; font-size:13.5px;">
+    <span class="text-muted">매칭 합계</span>
+    <strong><%= totalMatched.toLocaleString() %>원 / <%= charge.total_amount.toLocaleString() %>원</strong>
+  </div>
+  <% } %>
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">
+    <h2>SMS 발송 로그</h2>
+    <form action="/charges/<%= charge.id %>/send-sms" method="POST" onsubmit="return confirm('<%= charge.status === 'overdue' ? '미납 안내' : '교재비 안내' %> SMS를 발송하시겠습니까?');">
+      <button type="submit" class="btn btn-primary btn-sm">
+        <%= charge.status === 'overdue' ? '미납 안내 발송' : '안내 SMS 재발송' %>
+      </button>
+    </form>
+  </div>
+  <% if (smsLogs.length === 0) { %>
+    <div class="empty-state"><p>발송된 SMS가 없습니다.</p></div>
+  <% } else { %>
+  <table class="data-table">
+    <thead>
+      <tr><th>발송일시</th><th>유형</th><th>수신번호</th><th class="center">결과</th></tr>
+    </thead>
+    <tbody>
+      <% smsLogs.forEach(s => { %>
+      <tr>
+        <td><%= s.sent_at %></td>
+        <td class="text-muted"><%= s.template_type === 'charge_notice' ? '교재비 안내' : '미납 안내' %></td>
+        <td><%= s.recipient_phone %></td>
+        <td class="center"><span class="badge badge-<%= s.send_status %>"><%= s.send_status === 'success' ? '성공' : '실패' %></span></td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <% } %>
+</div>
+
+<% if (charge.status !== 'canceled' && charge.status !== 'paid') { %>
+<form action="/charges/<%= charge.id %>/cancel" method="POST" onsubmit="return confirm('이 청구를 취소하시겠습니까?');">
+  <button type="submit" class="btn btn-danger">청구 취소</button>
+</form>
+<% } %>
+
+<%- include('../partials/footer') %>

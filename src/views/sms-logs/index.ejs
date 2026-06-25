@@ -1,0 +1,108 @@
+<%- include('../partials/header') %>
+
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="label">전체 발송</div>
+    <div class="value"><%= overallStats.total.toLocaleString() %>건</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">성공</div>
+    <div class="value accent-teal"><%= overallStats.success_count.toLocaleString() %>건</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">실패</div>
+    <div class="value accent-danger"><%= overallStats.failed_count.toLocaleString() %>건</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">교재비안내 / 미납안내</div>
+    <div class="value" style="font-size:20px;"><%= overallStats.charge_notice_count %> / <%= overallStats.overdue_notice_count %></div>
+  </div>
+</div>
+
+<div class="toolbar">
+  <form class="filter-bar" method="GET" action="/sms-logs">
+    <input type="text" name="keyword" placeholder="학생명 검색" value="<%= filters.keyword %>">
+    <select name="type">
+      <option value="">전체 유형</option>
+      <option value="charge_notice" <%= filters.type === 'charge_notice' ? 'selected' : '' %>>교재비 안내</option>
+      <option value="overdue_notice" <%= filters.type === 'overdue_notice' ? 'selected' : '' %>>미납 안내</option>
+    </select>
+    <select name="status">
+      <option value="">전체 결과</option>
+      <option value="success" <%= filters.status === 'success' ? 'selected' : '' %>>성공</option>
+      <option value="failed" <%= filters.status === 'failed' ? 'selected' : '' %>>실패</option>
+    </select>
+    <button type="submit" class="btn btn-secondary btn-sm">검색</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2>발송 이력</h2>
+    <span class="text-muted" style="font-size:13px;">총 <%= pagination.total.toLocaleString() %>건</span>
+  </div>
+
+  <% if (logs.length === 0) { %>
+    <div class="empty-state">
+      <div class="icon">✉</div>
+      <p>조건에 맞는 발송 이력이 없습니다.</p>
+    </div>
+  <% } else { %>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>발송일시</th>
+        <th>학생</th>
+        <th>유형</th>
+        <th>수신번호</th>
+        <th>내용</th>
+        <th class="center">결과</th>
+        <th class="center">관리</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% logs.forEach(l => { %>
+      <tr>
+        <td style="white-space:nowrap;"><%= l.sent_at %></td>
+        <td><strong><%= l.student_name %></strong></td>
+        <td class="text-muted"><%= l.template_type === 'charge_notice' ? '교재비 안내' : '미납 안내' %></td>
+        <td><%= l.recipient_phone %></td>
+        <td class="text-muted" style="max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<%= l.message_content %>">
+          <%= l.message_content.split('\n')[0] %>
+        </td>
+        <td class="center">
+          <span class="badge badge-<%= l.send_status %>"><%= l.send_status === 'success' ? '성공' : '실패' %></span>
+          <% if (l.send_status === 'failed' && l.fail_reason) { %>
+            <div class="text-muted" style="font-size:11px; margin-top:2px;"><%= l.fail_reason %></div>
+          <% } %>
+        </td>
+        <td class="center">
+          <% if (l.send_status === 'failed') { %>
+            <form action="/sms-logs/<%= l.id %>/resend" method="POST" onsubmit="return confirm('재발송하시겠습니까?');">
+              <button type="submit" class="btn btn-secondary btn-sm">재발송</button>
+            </form>
+          <% } else { %>
+            <span class="text-muted">-</span>
+          <% } %>
+        </td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <% } %>
+</div>
+
+<% if (pagination.totalPages > 1) { %>
+<div class="pagination">
+  <% for (let p = 1; p <= pagination.totalPages; p++) { %>
+    <% const qs = new URLSearchParams({...filters, page: p}).toString(); %>
+    <% if (p === pagination.page) { %>
+      <span class="current"><%= p %></span>
+    <% } else { %>
+      <a href="/sms-logs?<%= qs %>"><%= p %></a>
+    <% } %>
+  <% } %>
+</div>
+<% } %>
+
+<%- include('../partials/footer') %>

@@ -1,0 +1,76 @@
+<%- include('../partials/header') %>
+
+<div class="card">
+  <div class="card-header">
+    <h2>업로드 확인</h2>
+    <span class="text-muted" style="font-size:13px;"><%= originalName %></span>
+  </div>
+  <div class="card-body">
+
+    <div class="stat-grid" style="grid-template-columns: repeat(4,1fr); margin-bottom:20px;">
+      <div class="stat-card">
+        <div class="label">정상 인식된 입금 거래</div>
+        <div class="value accent-teal"><%= totalCount %>건</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">출금행 제외</div>
+        <div class="value text-muted" style="font-size:20px;"><%= skippedWithdrawals || 0 %>건</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">인식 실패 행</div>
+        <div class="value <%= errorCount > 0 ? 'accent-danger' : '' %>"><%= errorCount %>건</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">미리보기</div>
+        <div class="value">상위 50건</div>
+      </div>
+    </div>
+
+    <% if (errorCount > 0) { %>
+    <div class="flash error" style="margin-bottom:16px;">
+      <%= errorCount %>개 행에서 날짜/입금금액/입금자 식별정보를 인식하지 못했습니다. 해당 행은 저장되지 않습니다. 컬럼 매핑을 다시 확인해보세요.
+    </div>
+    <% } %>
+
+    <table class="data-table" style="margin-bottom:20px;">
+      <thead>
+        <tr>
+          <th>거래일시</th>
+          <th>입금자 식별정보</th>
+          <th class="num">입금금액</th>
+          <th>메모</th>
+          <th class="center">비고</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% previewWithDup.forEach(t => { %>
+        <tr>
+          <td><%= t.txnDatetime %></td>
+          <td><%= t.depositorName %></td>
+          <td class="num"><%= t.amount.toLocaleString() %>원</td>
+          <td class="text-muted"><%= t.memo || '-' %></td>
+          <td class="center">
+            <% if (t.isDuplicate) { %>
+              <span class="badge badge-unmatched">중복(제외됨)</span>
+            <% } else if (t.willAutoMatch) { %>
+              <span class="badge badge-matched">자동매칭 예상</span>
+            <% } else { %>
+              <span class="badge badge-active">저장 예정 (미확인)</span>
+            <% } %>
+          </td>
+        </tr>
+        <% }) %>
+      </tbody>
+    </table>
+
+    <form action="/payments/confirm" method="POST">
+      <input type="hidden" name="uploadId" value="<%= uploadId %>">
+      <div style="display:flex; gap:8px; justify-content:flex-end;">
+        <a href="/payments/upload" class="btn btn-secondary">취소하고 다시 업로드</a>
+        <button type="submit" class="btn btn-primary">저장 및 자동 매칭 실행</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

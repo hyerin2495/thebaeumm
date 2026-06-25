@@ -1,0 +1,77 @@
+<%- include('../partials/header') %>
+
+<div class="toolbar">
+  <form class="filter-bar" method="GET" action="/charges">
+    <input type="text" name="keyword" placeholder="학생명 검색" value="<%= filters.keyword %>">
+    <select name="status">
+      <option value="">전체 상태</option>
+      <option value="unpaid" <%= filters.status === 'unpaid' ? 'selected' : '' %>>미수금</option>
+      <option value="paid" <%= filters.status === 'paid' ? 'selected' : '' %>>완납</option>
+      <option value="overdue" <%= filters.status === 'overdue' ? 'selected' : '' %>>미납</option>
+      <option value="partial" <%= filters.status === 'partial' ? 'selected' : '' %>>부분납</option>
+      <option value="canceled" <%= filters.status === 'canceled' ? 'selected' : '' %>>취소</option>
+    </select>
+    <button type="submit" class="btn btn-secondary btn-sm">검색</button>
+  </form>
+  <a href="/charges/new" class="btn btn-primary">+ 청구 생성</a>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2>청구 목록</h2>
+    <span class="text-muted" style="font-size:13px;">총 <%= pagination.total.toLocaleString() %>건</span>
+  </div>
+
+  <% if (charges.length === 0) { %>
+    <div class="empty-state">
+      <div class="icon">▦</div>
+      <p>조건에 맞는 청구가 없습니다.</p>
+    </div>
+  <% } else { %>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>학생</th>
+        <th>학교/학년</th>
+        <th>교재</th>
+        <th class="num">청구금액</th>
+        <th>입금기한</th>
+        <th class="center">상태</th>
+        <th class="center">관리</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% charges.forEach(c => { %>
+      <tr>
+        <td><a href="/charges/<%= c.id %>"><strong><%= c.student_name %></strong></a></td>
+        <td class="text-muted"><%= c.school_name || '-' %> <%= c.grade || '' %></td>
+        <td class="text-muted" style="max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+          <%= c.book_names %> <% if (c.item_count > 1) { %>(<%= c.item_count %>종)<% } %>
+        </td>
+        <td class="num"><%= c.total_amount.toLocaleString() %>원</td>
+        <td><%= c.due_date %></td>
+        <td class="center"><span class="badge badge-<%= c.status %>"><%= statusLabel[c.status] %></span></td>
+        <td class="center">
+          <a href="/charges/<%= c.id %>" class="btn btn-secondary btn-sm">상세</a>
+        </td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <% } %>
+</div>
+
+<% if (pagination.totalPages > 1) { %>
+<div class="pagination">
+  <% for (let p = 1; p <= pagination.totalPages; p++) { %>
+    <% const qs = new URLSearchParams({...filters, page: p}).toString(); %>
+    <% if (p === pagination.page) { %>
+      <span class="current"><%= p %></span>
+    <% } else { %>
+      <a href="/charges?<%= qs %>"><%= p %></a>
+    <% } %>
+  <% } %>
+</div>
+<% } %>
+
+<%- include('../partials/footer') %>

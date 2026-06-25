@@ -1,0 +1,88 @@
+<%- include('../partials/header') %>
+
+<div class="toolbar">
+  <form class="filter-bar" method="GET" action="/payments">
+    <input type="text" name="keyword" placeholder="입금자 식별정보 검색" value="<%= filters.keyword %>">
+    <select name="status">
+      <option value="all" <%= filters.status === 'all' ? 'selected' : '' %>>전체</option>
+      <option value="unmatched" <%= filters.status === 'unmatched' || !filters.status ? 'selected' : '' %>>미확인</option>
+      <option value="matched" <%= filters.status === 'matched' ? 'selected' : '' %>>매칭완료</option>
+      <option value="ignored" <%= filters.status === 'ignored' ? 'selected' : '' %>>무시됨</option>
+    </select>
+    <button type="submit" class="btn btn-secondary btn-sm">검색</button>
+  </form>
+  <a href="/payments/upload" class="btn btn-primary">+ 거래내역 업로드</a>
+</div>
+
+<% if (unmatchedCount > 0) { %>
+<div class="flash error" style="margin:0 0 16px;">
+  미확인 입금 <%= unmatchedCount %>건이 있습니다. 학생과 매칭이 필요합니다.
+</div>
+<% } %>
+
+<div class="card">
+  <div class="card-header">
+    <h2>입금 거래내역</h2>
+    <span class="text-muted" style="font-size:13px;">총 <%= pagination.total.toLocaleString() %>건</span>
+  </div>
+
+  <% if (txns.length === 0) { %>
+    <div class="empty-state">
+      <div class="icon">▧</div>
+      <p>조건에 맞는 거래내역이 없습니다.</p>
+    </div>
+  <% } else { %>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>거래일시</th>
+        <th>입금자 식별정보</th>
+        <th class="num">입금금액</th>
+        <th>메모</th>
+        <th class="center">상태</th>
+        <th class="center">관리</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% txns.forEach(t => { %>
+      <tr>
+        <td><%= t.txn_datetime %></td>
+        <td><strong><%= t.depositor_name %></strong></td>
+        <td class="num"><%= t.amount.toLocaleString() %>원</td>
+        <td class="text-muted"><%= t.memo || '-' %></td>
+        <td class="center">
+          <span class="badge badge-<%= t.match_status %>">
+            <%= t.match_status === 'matched' ? '매칭완료' : (t.match_status === 'ignored' ? '무시됨' : '미확인') %>
+          </span>
+        </td>
+        <td class="center">
+          <% if (t.match_status === 'unmatched') { %>
+            <a href="/payments/<%= t.id %>/match" class="btn btn-primary btn-sm">매칭</a>
+            <form action="/payments/<%= t.id %>/ignore" method="POST" style="display:inline;" onsubmit="return confirm('이 거래를 무시 처리하시겠습니까?');">
+              <button type="submit" class="btn btn-secondary btn-sm">무시</button>
+            </form>
+          <% } else { %>
+            <span class="text-muted">-</span>
+          <% } %>
+        </td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <% } %>
+</div>
+
+<% if (pagination.totalPages > 1) { %>
+<div class="pagination">
+  <% for (let p = 1; p <= pagination.totalPages; p++) { %>
+    <% const qs = new URLSearchParams({...filters, page: p}).toString(); %>
+    <% if (p === pagination.page) { %>
+      <span class="current"><%= p %></span>
+    <% } else { %>
+      <a href="/payments?<%= qs %>"><%= p %></a>
+    <% } %>
+  <% } %>
+</div>
+<% } %>
+
+<%- include('../partials/footer') %>

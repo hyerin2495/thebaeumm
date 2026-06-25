@@ -1,0 +1,83 @@
+<%- include('../partials/header') %>
+
+<% if (flash) { %>
+  <div class="flash <%= flash.type %>" style="margin:0 0 16px;"><%= flash.message %></div>
+<% } %>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header"><h2>매칭할 거래</h2></div>
+  <div class="card-body" style="display:grid; grid-template-columns:repeat(3,1fr); gap:16px;">
+    <div>
+      <div class="text-muted" style="font-size:12.5px;">거래일시</div>
+      <div style="font-weight:700;"><%= txn.txn_datetime %></div>
+    </div>
+    <div>
+      <div class="text-muted" style="font-size:12.5px;">입금자 식별정보</div>
+      <div style="font-weight:700;"><%= txn.depositor_name %></div>
+    </div>
+    <div>
+      <div class="text-muted" style="font-size:12.5px;">입금금액</div>
+      <div style="font-weight:700; font-size:18px; color:var(--navy-800);"><%= txn.amount.toLocaleString() %>원</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2>매칭 후보 청구</h2>
+    <span class="text-muted" style="font-size:13px;">전화번호/학생이름/학부모이름/금액 기준 추천</span>
+  </div>
+
+  <% if (candidates.length === 0) { %>
+    <div class="empty-state">
+      <p>추천할 후보 청구가 없습니다. 청구 관리에서 직접 확인해보세요.</p>
+      <a href="/charges" class="btn btn-secondary btn-sm" style="margin-top:10px;">청구 관리로 이동</a>
+    </div>
+  <% } else { %>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>학생</th>
+        <th>학교</th>
+        <th>학부모</th>
+        <th class="num">청구금액</th>
+        <th>입금기한</th>
+        <th class="center">상태</th>
+        <th class="center">추천근거</th>
+        <th class="center">매칭</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% candidates.forEach(c => { %>
+      <tr style="<%= c.total_amount === txn.amount ? 'background:#f4fbf9;' : '' %>">
+        <td><strong><%= c.student_name %></strong></td>
+        <td class="text-muted"><%= c.school_name || '-' %></td>
+        <td><%= c.parent_name || '-' %></td>
+        <td class="num">
+          <%= c.total_amount.toLocaleString() %>원
+          <% if (c.total_amount === txn.amount) { %><span class="badge badge-matched" style="margin-left:4px;">금액일치</span><% } %>
+        </td>
+        <td><%= c.due_date %></td>
+        <td class="center"><span class="badge badge-<%= c.status %>"><%= c.status === 'overdue' ? '미납' : (c.status === 'partial' ? '부분납' : '미수금') %></span></td>
+        <td class="center">
+          <% if (matchRankLabel[c.match_rank]) { %>
+            <span class="badge badge-active"><%= matchRankLabel[c.match_rank] %></span>
+          <% } else { %>
+            <span class="text-muted">-</span>
+          <% } %>
+        </td>
+        <td class="center">
+          <form action="/payments/<%= txn.id %>/match" method="POST" onsubmit="return confirm('<%= c.student_name %> 학생 청구에 매칭하시겠습니까?');">
+            <input type="hidden" name="charge_id" value="<%= c.id %>">
+            <input type="hidden" name="matched_amount" value="<%= Math.min(txn.amount, c.total_amount) %>">
+            <button type="submit" class="btn btn-primary btn-sm">이 청구에 매칭</button>
+          </form>
+        </td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <% } %>
+</div>
+
+<%- include('../partials/footer') %>

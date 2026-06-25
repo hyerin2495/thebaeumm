@@ -1,0 +1,52 @@
+<%- include('../partials/header') %>
+
+<div class="card" style="max-width:560px;">
+  <div class="card-header">
+    <h2><%= book ? '교재 정보 수정' : '신규 교재 등록' %></h2>
+  </div>
+  <div class="card-body">
+    <% if (flash) { %>
+      <div class="flash <%= flash.type %>" style="margin:0 0 16px;"><%= flash.message %></div>
+    <% } %>
+
+    <form action="<%= formAction %>" method="POST">
+      <div class="form-group">
+        <label for="name">교재명 *</label>
+        <input type="text" id="name" name="name" required value="<%= book ? book.name || '' : '' %>">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="subject">과목</label>
+          <select id="subject" name="subject">
+            <option value="">선택 안함</option>
+            <option value="영어" <%= book && book.subject === '영어' ? 'selected' : '' %>>영어</option>
+            <option value="수학" <%= book && book.subject === '수학' ? 'selected' : '' %>>수학</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="price">단가 (원) *</label>
+          <input type="number" id="price" name="price" required min="1" step="100" value="<%= book ? book.price || '' : '' %>">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="publisher">출판사</label>
+        <input type="text" id="publisher" name="publisher" placeholder="예: 능률교육" value="<%= book ? book.publisher || '' : '' %>">
+      </div>
+
+      <% if (book) { %>
+      <div class="form-help" style="margin-bottom:16px;">
+        ※ 단가를 수정해도 이미 생성된 청구 건의 금액에는 영향을 주지 않습니다. (청구 시점 단가가 별도 저장됨)
+      </div>
+      <% } %>
+
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:8px;">
+        <a href="/books" class="btn btn-secondary">취소</a>
+        <button type="submit" class="btn btn-primary"><%= book ? '수정 완료' : '등록하기' %></button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

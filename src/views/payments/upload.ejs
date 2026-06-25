@@ -1,0 +1,27 @@
+<%- include('../partials/header') %>
+
+<div class="card" style="max-width:560px;">
+  <div class="card-header">
+    <h2>거래내역 파일 업로드</h2>
+  </div>
+  <div class="card-body">
+    <% if (flash) { %>
+      <div class="flash <%= flash.type %>" style="margin:0 0 16px;"><%= flash.message %></div>
+    <% } %>
+
+    <form action="/payments/upload" method="POST" enctype="multipart/form-data">
+      <div class="form-group">
+        <label for="file">은행 거래내역 파일 (.xlsx 또는 .csv)</label>
+        <input type="file" id="file" name="file" accept=".xlsx,.xls,.csv" required>
+        <div class="form-help">은행 인터넷뱅킹에서 내려받은 거래내역 파일을 그대로 업로드하세요. 다음 단계에서 컬럼을 매핑합니다.</div>
+      </div>
+
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:20px;">
+        <a href="/payments" class="btn btn-secondary">취소</a>
+        <button type="submit" class="btn btn-primary">업로드 및 분석</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

@@ -1,0 +1,154 @@
+<%- include('../partials/header') %>
+
+<div class="card" style="max-width:760px;">
+  <div class="card-header">
+    <h2>신규 청구 생성</h2>
+  </div>
+  <div class="card-body">
+    <% if (flash) { %>
+      <div class="flash <%= flash.type %>" style="margin:0 0 16px;"><%= flash.message %></div>
+    <% } %>
+
+    <form action="/charges/new" method="POST" id="chargeForm">
+
+      <div class="form-group">
+        <label for="student_search">학생 선택 *</label>
+        <input type="text" id="student_search" placeholder="학생명으로 검색..." autocomplete="off">
+        <select id="student_id" name="student_id" required style="margin-top:8px;">
+          <option value="">학생을 선택하세요</option>
+          <% students.forEach(s => { %>
+            <option value="<%= s.id %>" data-search="<%= s.name %>" data-school="<%= s.school_name || '' %>" data-grade="<%= s.grade || '' %>">
+              <%= s.name %> (<%= s.school_name || '학교미입력' %> <%= s.grade || '' %>) - 학부모 <%= s.parent_phone %>
+            </option>
+          <% }) %>
+        </select>
+        <div class="form-help">검색창에 입력하면 아래 선택 목록이 좁혀집니다.</div>
+      </div>
+
+      <div class="form-group">
+        <label>교재 선택 * (1개 이상)</label>
+        <div style="border:1px solid var(--border-strong); border-radius:var(--radius-sm); max-height:280px; overflow-y:auto;">
+          <table class="data-table" style="font-size:13px;">
+            <thead>
+              <tr>
+                <th class="checkbox-cell"></th>
+                <th>교재명</th>
+                <th>과목</th>
+                <th class="num">단가</th>
+                <th class="center" style="width:90px;">수량</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% books.forEach(b => { %>
+              <tr>
+                <td class="checkbox-cell">
+                  <input type="checkbox" class="book-check" data-price="<%= b.price %>" data-name="<%= b.name %>" name="book_id" value="<%= b.id %>">
+                </td>
+                <td><%= b.name %></td>
+                <td class="text-muted"><%= b.subject %></td>
+                <td class="num"><%= b.price.toLocaleString() %>원</td>
+                <td class="center">
+                  <input type="number" class="book-qty" name="quantity" value="1" min="1" style="width:60px; padding:4px 6px; text-align:center;" disabled>
+                </td>
+              </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="background:#fafbfc; margin-bottom:16px;">
+        <div class="card-body" style="padding:14px 18px; display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:13.5px; color:var(--text-secondary);">선택된 교재 합계</span>
+          <strong id="totalDisplay" style="font-size:19px; color:var(--navy-800);">0원</strong>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="due_date">입금기한 *</label>
+        <input type="date" id="due_date" name="due_date" required value="<%= defaultDueDate %>">
+        <div class="form-help">기본값은 청구일 기준 7일 후입니다.</div>
+      </div>
+
+      <div class="form-group" style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" id="send_sms" name="send_sms" checked style="width:auto;">
+        <label for="send_sms" style="margin:0;">청구 생성 즉시 교재비 안내 SMS 발송</label>
+      </div>
+
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:8px;">
+        <a href="/charges" class="btn btn-secondary">취소</a>
+        <button type="submit" class="btn btn-primary">청구 생성</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  // 학생 검색 필터
+  const searchInput = document.getElementById('student_search');
+  const studentSelect = document.getElementById('student_id');
+  const allOptions = Array.from(studentSelect.options);
+
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value.trim();
+    studentSelect.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '학생을 선택하세요';
+    studentSelect.appendChild(placeholder);
+
+    allOptions.slice(1).forEach(opt => {
+      if (!q || opt.dataset.search.includes(q)) {
+        studentSelect.appendChild(opt.cloneNode(true));
+      }
+    });
+  });
+
+  // 교재 체크 시 수량 입력 활성화 + 합계 계산
+  const checkboxes = document.querySelectorAll('.book-check');
+  const totalDisplay = document.getElementById('totalDisplay');
+
+  function recalcTotal() {
+    let total = 0;
+    checkboxes.forEach(cb => {
+      const row = cb.closest('tr');
+      const qtyInput = row.querySelector('.book-qty');
+      if (cb.checked) {
+        qtyInput.disabled = false;
+        const qty = parseInt(qtyInput.value, 10) || 1;
+        total += parseInt(cb.dataset.price, 10) * qty;
+      } else {
+        qtyInput.disabled = true;
+      }
+    });
+    totalDisplay.textContent = total.toLocaleString() + '원';
+  }
+
+  checkboxes.forEach(cb => {
+    cb.addEventListener('change', recalcTotal);
+    cb.closest('tr').querySelector('.book-qty').addEventListener('input', recalcTotal);
+  });
+
+  // 제출 전 검증: 학생/교재 선택 확인 + 체크 안된 항목의 수량 input 제거(배열 인덱스 정합성)
+  document.getElementById('chargeForm').addEventListener('submit', (e) => {
+    if (!studentSelect.value) {
+      alert('학생을 선택해주세요.');
+      e.preventDefault();
+      return;
+    }
+    const anyChecked = Array.from(checkboxes).some(cb => cb.checked);
+    if (!anyChecked) {
+      alert('교재를 1개 이상 선택해주세요.');
+      e.preventDefault();
+      return;
+    }
+    checkboxes.forEach(cb => {
+      const qtyInput = cb.closest('tr').querySelector('.book-qty');
+      if (!cb.checked) {
+        qtyInput.removeAttribute('name'); // 체크 안된 행은 제출에서 제외
+      }
+    });
+  });
+</script>
+
+<%- include('../partials/footer') %>

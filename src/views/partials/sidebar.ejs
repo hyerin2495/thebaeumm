@@ -1,0 +1,44 @@
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <img src="/images/logo.svg" alt="logo">
+    <div>
+      <div class="name">더배움 영수학원</div>
+      <div class="sub">교재비 관리 시스템</div>
+    </div>
+  </div>
+
+  <nav class="nav-section">
+    <a href="/" class="nav-item <%= active === 'dashboard' ? 'active' : '' %>">
+      <span class="icon">⌂</span> 대시보드
+    </a>
+    <a href="/students" class="nav-item <%= active === 'students' ? 'active' : '' %>">
+      <span class="icon">▤</span> 학생 관리
+    </a>
+    <a href="/books" class="nav-item <%= active === 'books' ? 'active' : '' %>">
+      <span class="icon">▥</span> 교재 관리
+    </a>
+    <a href="/charges" class="nav-item <%= active === 'charges' ? 'active' : '' %>">
+      <span class="icon">▦</span> 청구 관리
+    </a>
+    <a href="/payments" class="nav-item <%= active === 'payments' ? 'active' : '' %>">
+      <span class="icon">▧</span> 입금 관리
+    </a>
+    <a href="/overdue" class="nav-item <%= active === 'overdue' ? 'active' : '' %>">
+      <span class="icon">!</span> 미납 관리
+    </a>
+    <a href="/sms-logs" class="nav-item <%= active === 'sms-logs' ? 'active' : '' %>">
+      <span class="icon">✉</span> SMS 발송 로그
+    </a>
+    <a href="/settings" class="nav-item <%= active === 'settings' ? 'active' : '' %>">
+      <span class="icon">⚙</span> 설정
+    </a>
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="admin-name"><%= adminName %></div>
+    <div><%= adminRole === 'director' ? '원장' : '직원' %></div>
+    <form action="/logout" method="POST">
+      <button type="submit" class="logout-btn">로그아웃</button>
+    </form>
+  </div>
+</aside>

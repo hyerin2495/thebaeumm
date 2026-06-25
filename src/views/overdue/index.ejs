@@ -1,0 +1,126 @@
+<%- include('../partials/header') %>
+
+<% if (convertedCount > 0) { %>
+<div class="flash success" style="margin:0 0 16px;">
+  입금기한이 지난 청구 <%= convertedCount %>건이 미납 상태로 자동 전환되었습니다.
+</div>
+<% } %>
+
+<div class="stat-grid" style="grid-template-columns: repeat(3,1fr);">
+  <div class="stat-card">
+    <div class="label">미납 건수</div>
+    <div class="value accent-danger"><%= overdueCharges.length %>건</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">미납 학생 수</div>
+    <div class="value accent-warn"><%= uniqueStudents %>명</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">미납 잔액 합계</div>
+    <div class="value"><%= totalOverdueAmount.toLocaleString() %>원</div>
+  </div>
+</div>
+
+<div class="toolbar">
+  <form class="filter-bar" method="GET" action="/overdue" style="margin:0;">
+    <input type="text" name="keyword" placeholder="학생명 검색" value="<%= filters.keyword %>">
+    <button type="submit" class="btn btn-secondary btn-sm">검색</button>
+  </form>
+  <button type="button" class="btn btn-primary" id="bulkSendBtn" disabled>선택 항목 미납 안내 발송 (0건)</button>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2>미납 목록</h2>
+  </div>
+
+  <% if (overdueCharges.length === 0) { %>
+    <div class="empty-state">
+      <div class="icon">!</div>
+      <p>현재 미납 건이 없습니다.</p>
+    </div>
+  <% } else { %>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="checkbox-cell"><input type="checkbox" id="checkAll"></th>
+        <th>학생</th>
+        <th>학교/학년</th>
+        <th class="num">청구금액</th>
+        <th class="num">납부완료액</th>
+        <th class="num">잔액</th>
+        <th>입금기한</th>
+        <th class="center">미납일수</th>
+        <th class="center">최근 안내발송</th>
+        <th class="center">관리</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% overdueCharges.forEach(c => { %>
+      <tr>
+        <td class="checkbox-cell">
+          <input type="checkbox" class="row-check" value="<%= c.id %>">
+        </td>
+        <td><a href="/charges/<%= c.id %>"><strong><%= c.student_name %></strong></a></td>
+        <td class="text-muted"><%= c.school_name || '-' %> <%= c.grade || '' %></td>
+        <td class="num"><%= c.total_amount.toLocaleString() %>원</td>
+        <td class="num text-muted"><%= c.matched_amount.toLocaleString() %>원</td>
+        <td class="num" style="color:var(--status-overdue-text); font-weight:700;"><%= (c.total_amount - c.matched_amount).toLocaleString() %>원</td>
+        <td><%= c.due_date %></td>
+        <td class="center"><span class="badge badge-overdue"><%= c.overdue_days %>일</span></td>
+        <td class="center text-muted" style="font-size:12px;">
+          <%= c.last_overdue_sms_at ? c.last_overdue_sms_at.substring(0,16) : '발송 안함' %>
+        </td>
+        <td class="center">
+          <form action="/overdue/<%= c.id %>/send" method="POST" style="display:inline;" onsubmit="return confirm('<%= c.student_name %> 학생에게 미납 안내를 발송하시겠습니까?');">
+            <button type="submit" class="btn btn-primary btn-sm">발송</button>
+          </form>
+        </td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <% } %>
+</div>
+
+<!-- 다중 발송용 hidden form: JS가 제출 직전에 체크된 id들을 hidden input으로 채워넣음 -->
+<form action="/overdue/send-bulk" method="POST" id="bulkForm" style="display:none;"></form>
+
+<script>
+  const checkAll = document.getElementById('checkAll');
+  const rowChecks = document.querySelectorAll('.row-check');
+  const bulkBtn = document.getElementById('bulkSendBtn');
+  const bulkForm = document.getElementById('bulkForm');
+
+  function updateBulkBtn() {
+    const checkedCount = Array.from(rowChecks).filter(c => c.checked).length;
+    bulkBtn.disabled = checkedCount === 0;
+    bulkBtn.textContent = `선택 항목 미납 안내 발송 (${checkedCount}건)`;
+  }
+
+  if (checkAll) {
+    checkAll.addEventListener('change', () => {
+      rowChecks.forEach(c => c.checked = checkAll.checked);
+      updateBulkBtn();
+    });
+  }
+  rowChecks.forEach(c => c.addEventListener('change', updateBulkBtn));
+
+  bulkBtn.addEventListener('click', () => {
+    const checkedIds = Array.from(rowChecks).filter(c => c.checked).map(c => c.value);
+    if (checkedIds.length === 0) return;
+    if (!confirm(`선택한 ${checkedIds.length}건에 미납 안내를 발송하시겠습니까?`)) return;
+
+    bulkForm.innerHTML = '';
+    checkedIds.forEach(id => {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'charge_ids';
+      input.value = id;
+      bulkForm.appendChild(input);
+    });
+    bulkForm.submit();
+  });
+</script>
+
+<%- include('../partials/footer') %>

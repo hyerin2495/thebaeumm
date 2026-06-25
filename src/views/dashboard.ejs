@@ -1,0 +1,89 @@
+<%- include('partials/header') %>
+
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="label">이번 달 청구 건수</div>
+    <div class="value"><%= stats.chargeCount.toLocaleString() %>건</div>
+    <div class="delta">청구금액 <%= stats.totalBilled.toLocaleString() %>원</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">이번 달 수납액</div>
+    <div class="value accent-teal"><%= stats.collected.toLocaleString() %>원</div>
+    <div class="delta">청구 대비 수납</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">미납자 수</div>
+    <div class="value accent-danger"><%= stats.overdueCount.toLocaleString() %>명</div>
+    <div class="delta">미납액 합계 <%= stats.overdueAmount.toLocaleString() %>원</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">미확인 입금</div>
+    <div class="value accent-warn"><%= stats.unmatchedTxnCount.toLocaleString() %>건</div>
+    <div class="delta">학생 매칭 필요</div>
+  </div>
+</div>
+
+<div style="display:grid; grid-template-columns: 1.4fr 1fr; gap:20px; align-items:start;">
+
+  <div class="card">
+    <div class="card-header">
+      <h2>최근 청구 내역</h2>
+      <a href="/charges" class="btn btn-secondary btn-sm">전체보기</a>
+    </div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>학생</th>
+          <th>학교</th>
+          <th class="num">청구금액</th>
+          <th>입금기한</th>
+          <th>상태</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% recentCharges.forEach(c => { %>
+        <tr>
+          <td><%= c.student_name %></td>
+          <td class="text-muted"><%= c.school_name || '-' %></td>
+          <td class="num"><%= c.total_amount.toLocaleString() %>원</td>
+          <td><%= c.due_date %></td>
+          <td>
+            <% const badgeMap = {paid:'완납', unpaid:'미수금', overdue:'미납', partial:'부분납', canceled:'취소'}; %>
+            <span class="badge badge-<%= c.status %>"><%= badgeMap[c.status] || c.status %></span>
+          </td>
+        </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h2>최근 SMS 발송 로그</h2>
+      <a href="/sms-logs" class="btn btn-secondary btn-sm">전체보기</a>
+    </div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>학생</th>
+          <th>유형</th>
+          <th>결과</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% recentSms.forEach(s => { %>
+        <tr>
+          <td><%= s.student_name %></td>
+          <td class="text-muted"><%= s.template_type === 'charge_notice' ? '교재비 안내' : '미납 안내' %></td>
+          <td>
+            <span class="badge badge-<%= s.send_status %>"><%= s.send_status === 'success' ? '성공' : '실패' %></span>
+          </td>
+        </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<%- include('partials/footer') %>

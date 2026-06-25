@@ -1,0 +1,114 @@
+<%- include('../partials/header') %>
+
+<% if (flash) { %>
+  <div class="flash <%= flash.type %>" style="margin:0 0 20px;"><%= flash.message %></div>
+<% } %>
+
+<div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:20px;">
+
+  <div class="card">
+    <div class="card-header"><h2>학원 계좌정보</h2></div>
+    <div class="card-body">
+      <form action="/settings/account" method="POST">
+        <div class="form-group">
+          <label for="account_info">SMS 안내에 표시될 계좌정보</label>
+          <input type="text" id="account_info" name="account_info" value="<%= accountInfo %>" placeholder="예: 농협 123-456-789012 (학원명)">
+          <div class="form-help">청구/미납 안내 SMS의 {계좌} 변수에 그대로 들어갑니다.</div>
+        </div>
+        <button type="submit" class="btn btn-primary">계좌정보 저장</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>SMS API 키 관리</h2></div>
+    <div class="card-body">
+      <div class="form-help" style="margin-bottom:14px;">
+        ※ 현재 단계에서는 SMS 발송이 시뮬레이션(로그 기록)으로 동작합니다. 아래 정보는 저장되지만 실제 외부 API 호출에는 아직 사용되지 않으며, 다음 단계(3단계)에서 연동됩니다.
+      </div>
+      <form action="/settings/sms-api" method="POST">
+        <div class="form-group">
+          <label for="sms_api_provider">SMS 중계 업체</label>
+          <select id="sms_api_provider" name="sms_api_provider">
+            <option value="aligo" <%= smsApiProvider === 'aligo' ? 'selected' : '' %>>알리고 (Aligo)</option>
+            <option value="coolsms" <%= smsApiProvider === 'coolsms' ? 'selected' : '' %>>쿨SMS</option>
+            <option value="other" <%= smsApiProvider === 'other' ? 'selected' : '' %>>기타</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="sms_sender_number">발신번호</label>
+          <input type="tel" id="sms_sender_number" name="sms_sender_number" value="<%= smsSenderNumber %>" placeholder="02-0000-0000">
+        </div>
+        <div class="form-group">
+          <label for="sms_api_key">API 키</label>
+          <input type="text" id="sms_api_key" name="sms_api_key" value="<%= smsApiKey %>" placeholder="발급받은 API 키를 입력하세요">
+        </div>
+        <button type="submit" class="btn btn-primary">SMS API 설정 저장</button>
+      </form>
+    </div>
+  </div>
+
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header"><h2>문자 템플릿 관리</h2></div>
+  <div class="card-body">
+    <% templates.forEach(t => { %>
+    <form action="/settings/templates/<%= t.id %>" method="POST" style="margin-bottom:18px; padding-bottom:18px; border-bottom:1px solid var(--border-color);">
+      <div class="form-group">
+        <label><%= t.name %> (<%= t.type === 'charge_notice' ? '교재비 안내' : '미납 안내' %>)</label>
+        <textarea name="content" rows="5"><%= t.content %></textarea>
+        <div class="form-help">사용 가능한 변수: {학생명} {교재명} {금액} {계좌} {기한}</div>
+      </div>
+      <button type="submit" class="btn btn-secondary btn-sm">이 템플릿 저장</button>
+    </form>
+    <% }) %>
+  </div>
+</div>
+
+<div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+
+  <div class="card">
+    <div class="card-header"><h2>관리자 계정</h2></div>
+    <table class="data-table">
+      <thead>
+        <tr><th>아이디</th><th>이름</th><th>역할</th><th class="center">상태</th></tr>
+      </thead>
+      <tbody>
+        <% admins.forEach(a => { %>
+        <tr>
+          <td><%= a.username %> <% if (a.id === currentAdminId) { %><span class="badge badge-active">나</span><% } %></td>
+          <td><%= a.display_name %></td>
+          <td class="text-muted"><%= a.role === 'director' ? '원장' : '직원' %></td>
+          <td class="center"><span class="badge badge-<%= a.is_active ? 'active' : 'inactive' %>"><%= a.is_active ? '사용중' : '비활성' %></span></td>
+        </tr>
+        <% }) %>
+      </tbody>
+    </table>
+    <div class="form-help" style="padding:14px 20px;">신규 관리자 등록·삭제는 다음 단계에서 지원될 예정입니다.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>비밀번호 변경</h2></div>
+    <div class="card-body">
+      <form action="/settings/change-password" method="POST">
+        <div class="form-group">
+          <label for="current_password">현재 비밀번호</label>
+          <input type="password" id="current_password" name="current_password" required>
+        </div>
+        <div class="form-group">
+          <label for="new_password">새 비밀번호</label>
+          <input type="password" id="new_password" name="new_password" required minlength="4">
+        </div>
+        <div class="form-group">
+          <label for="new_password_confirm">새 비밀번호 확인</label>
+          <input type="password" id="new_password_confirm" name="new_password_confirm" required minlength="4">
+        </div>
+        <button type="submit" class="btn btn-primary">비밀번호 변경</button>
+      </form>
+    </div>
+  </div>
+
+</div>
+
+<%- include('../partials/footer') %>

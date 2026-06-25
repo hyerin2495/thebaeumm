@@ -1,0 +1,103 @@
+<%- include('../partials/header') %>
+
+<div class="toolbar">
+  <form class="filter-bar" method="GET" action="/students">
+    <input type="text" name="keyword" placeholder="학생명 / 학부모명 / 연락처 검색" value="<%= filters.keyword %>">
+    <select name="school">
+      <option value="">전체 학교</option>
+      <% schoolList.forEach(s => { %>
+        <option value="<%= s.school_name %>" <%= filters.school === s.school_name ? 'selected' : '' %>><%= s.school_name %></option>
+      <% }) %>
+    </select>
+    <select name="grade">
+      <option value="">전체 학년</option>
+      <% gradeList.forEach(g => { %>
+        <option value="<%= g.grade %>" <%= filters.grade === g.grade ? 'selected' : '' %>><%= g.grade %></option>
+      <% }) %>
+    </select>
+    <select name="status">
+      <option value="active" <%= filters.status === 'active' ? 'selected' : '' %>>재원중</option>
+      <option value="inactive" <%= filters.status === 'inactive' ? 'selected' : '' %>>퇴원</option>
+      <option value="all" <%= filters.status === 'all' ? 'selected' : '' %>>전체</option>
+    </select>
+    <button type="submit" class="btn btn-secondary btn-sm">검색</button>
+  </form>
+  <a href="/students/new" class="btn btn-primary">+ 학생 등록</a>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2>학생 목록</h2>
+    <span class="text-muted" style="font-size:13px;">총 <%= pagination.total.toLocaleString() %>명</span>
+  </div>
+
+  <% if (students.length === 0) { %>
+    <div class="empty-state">
+      <div class="icon">▤</div>
+      <p>조건에 맞는 학생이 없습니다.</p>
+    </div>
+  <% } else { %>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>학생명</th>
+        <th>학교</th>
+        <th>학년</th>
+        <th>학부모명</th>
+        <th>학부모 연락처</th>
+        <th class="center">상태</th>
+        <th class="center">미납</th>
+        <th class="center">관리</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% students.forEach(s => { %>
+      <tr>
+        <td><strong><%= s.name %></strong></td>
+        <td class="text-muted"><%= s.school_name || '-' %></td>
+        <td class="text-muted"><%= s.grade || '-' %></td>
+        <td><%= s.parent_name || '-' %></td>
+        <td><%= s.parent_phone %></td>
+        <td class="center">
+          <span class="badge badge-<%= s.status %>"><%= s.status === 'active' ? '재원중' : '퇴원' %></span>
+        </td>
+        <td class="center">
+          <% if (s.overdue_count > 0) { %>
+            <span class="badge badge-overdue"><%= s.overdue_count %>건</span>
+          <% } else { %>
+            <span class="text-muted">-</span>
+          <% } %>
+        </td>
+        <td class="center">
+          <a href="/students/<%= s.id %>/edit" class="btn btn-secondary btn-sm">수정</a>
+          <% if (s.status === 'active') { %>
+            <form action="/students/<%= s.id %>/deactivate" method="POST" style="display:inline;" onsubmit="return confirm('<%= s.name %> 학생을 퇴원 처리하시겠습니까?');">
+              <button type="submit" class="btn btn-danger btn-sm">퇴원</button>
+            </form>
+          <% } else { %>
+            <form action="/students/<%= s.id %>/reactivate" method="POST" style="display:inline;">
+              <button type="submit" class="btn btn-secondary btn-sm">복귀</button>
+            </form>
+          <% } %>
+        </td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <% } %>
+</div>
+
+<% if (pagination.totalPages > 1) { %>
+<div class="pagination">
+  <% for (let p = 1; p <= pagination.totalPages; p++) { %>
+    <% const qs = new URLSearchParams({...filters, page: p}).toString(); %>
+    <% if (p === pagination.page) { %>
+      <span class="current"><%= p %></span>
+    <% } else { %>
+      <a href="/students?<%= qs %>"><%= p %></a>
+    <% } %>
+  <% } %>
+</div>
+<% } %>
+
+<%- include('../partials/footer') %>
