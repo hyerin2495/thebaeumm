@@ -1,5 +1,4 @@
 const express = require('express');
-const dayjs = require('dayjs');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { renderTemplate, sendSms, getDefaultTemplate, getAccountInfo } = require('../services/sms');
@@ -7,52 +6,52 @@ const { detectOverdue } = require('../services/overdueBatch');
 
 const router = express.Router();
 
-function buildOverdueMessage(charge) {
-  const items = db.prepare(`
+async function buildOverdueMessage(charge) {
+  const items = await db.all(`
     SELECT ci.quantity, bk.name FROM charge_item ci JOIN book bk ON bk.id = ci.book_id WHERE ci.charge_id = ?
-  `).all(charge.id);
+  `, [charge.id]);
   const bookNames = items.map(i => i.quantity > 1 ? `${i.name} x${i.quantity}` : i.name).join(', ');
 
-  const matched = db.prepare(`
+  const matchedRow = await db.get(`
     SELECT COALESCE(SUM(matched_amount),0) as sum FROM charge_payment_match WHERE charge_id = ?
-  `).get(charge.id).sum;
-  const remaining = charge.total_amount - matched;
+  `, [charge.id]);
+  const remaining = charge.total_amount - matchedRow.sum;
 
-  const template = getDefaultTemplate('overdue_notice');
+  const template = await getDefaultTemplate('overdue_notice');
+  const account = await getAccountInfo();
   const message = renderTemplate(template.content, {
     studentName: charge.student_name,
     bookNames,
     amount: remaining,
-    account: getAccountInfo(),
+    account,
     dueDate: charge.due_date,
   });
   return { message, remaining };
 }
 
-// ---------- 목록 ----------
-router.get('/overdue', requireAuth, (req, res) => {
-  const convertedCount = detectOverdue();
+router.get('/overdue', requireAuth, async (req, res) => {
+  const convertedCount = await detectOverdue();
 
   const { keyword = '' } = req.query;
   const conditions = ["c.status = 'overdue'"];
-  const params = {};
+  const params = [];
   if (keyword) {
-    conditions.push('s.name LIKE @kw');
-    params.kw = `%${keyword}%`;
+    conditions.push('s.name LIKE ?');
+    params.push(`%${keyword}%`);
   }
   const whereClause = 'WHERE ' + conditions.join(' AND ');
 
-  const overdueCharges = db.prepare(`
+  const overdueCharges = await db.all(`
     SELECT c.id, c.total_amount, c.due_date, c.status,
       s.id as student_id, s.name as student_name, s.school_name, s.grade, s.parent_phone,
-      CAST(julianday('now') - julianday(c.due_date) AS INTEGER) as overdue_days,
+      DATEDIFF(NOW(), c.due_date) as overdue_days,
       (SELECT COALESCE(SUM(matched_amount),0) FROM charge_payment_match WHERE charge_id = c.id) as matched_amount,
       (SELECT MAX(sent_at) FROM sms_log WHERE charge_id = c.id AND template_type='overdue_notice') as last_overdue_sms_at
     FROM charge c
     JOIN student s ON s.id = c.student_id
     ${whereClause}
     ORDER BY overdue_days DESC
-  `).all(params);
+  `, params);
 
   const totalOverdueAmount = overdueCharges.reduce((sum, c) => sum + (c.total_amount - c.matched_amount), 0);
   const uniqueStudents = new Set(overdueCharges.map(c => c.student_id)).size;
@@ -71,20 +70,19 @@ router.get('/overdue', requireAuth, (req, res) => {
   });
 });
 
-// ---------- 개별 발송 ----------
-router.post('/overdue/:id/send', requireAuth, (req, res) => {
-  const charge = db.prepare(`
+router.post('/overdue/:id/send', requireAuth, async (req, res) => {
+  const charge = await db.get(`
     SELECT c.*, s.name as student_name, s.parent_phone, s.id as student_id
     FROM charge c JOIN student s ON s.id = c.student_id WHERE c.id = ?
-  `).get(req.params.id);
+  `, [req.params.id]);
 
   if (!charge) {
     return res.redirect('/overdue?flash=' + encodeURIComponent('청구를 찾을 수 없습니다.') + '&flashType=error');
   }
 
-  const { message } = buildOverdueMessage(charge);
+  const { message } = await buildOverdueMessage(charge);
 
-  sendSms({
+  await sendSms({
     chargeId: charge.id,
     studentId: charge.student_id,
     templateType: 'overdue_notice',
@@ -96,8 +94,7 @@ router.post('/overdue/:id/send', requireAuth, (req, res) => {
   res.redirect('/overdue?flash=' + encodeURIComponent(`${charge.student_name} 학생에게 미납 안내를 발송했습니다.`));
 });
 
-// ---------- 다중 선택 발송 ----------
-router.post('/overdue/send-bulk', requireAuth, (req, res) => {
+router.post('/overdue/send-bulk', requireAuth, async (req, res) => {
   const { charge_ids } = req.body;
   const ids = Array.isArray(charge_ids) ? charge_ids : (charge_ids ? [charge_ids] : []);
 
@@ -108,16 +105,16 @@ router.post('/overdue/send-bulk', requireAuth, (req, res) => {
   let successCount = 0;
 
   for (const id of ids) {
-    const charge = db.prepare(`
+    const charge = await db.get(`
       SELECT c.*, s.name as student_name, s.parent_phone, s.id as student_id
       FROM charge c JOIN student s ON s.id = c.student_id WHERE c.id = ? AND c.status='overdue'
-    `).get(id);
+    `, [id]);
 
     if (!charge) continue;
 
-    const { message } = buildOverdueMessage(charge);
+    const { message } = await buildOverdueMessage(charge);
 
-    sendSms({
+    await sendSms({
       chargeId: charge.id,
       studentId: charge.student_id,
       templateType: 'overdue_notice',

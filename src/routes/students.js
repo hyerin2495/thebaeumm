@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { parseUploadedFile } = require('../services/payment');
@@ -10,8 +11,7 @@ const { extractStudents, checkDuplicates, saveStudentsBulk } = require('../servi
 const router = express.Router();
 const PAGE_SIZE = 15;
 
-const UPLOAD_DIR = path.join(__dirname, '..', '..', 'data', 'uploads');
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+const UPLOAD_DIR = os.tmpdir();
 
 const upload = multer({
   dest: UPLOAD_DIR,
@@ -23,53 +23,51 @@ const upload = multer({
   },
 });
 
-// 업로드된 학생 명단을 잠깐 들고 있을 메모리 캐시 (입금관리와 동일한 패턴)
 const pendingStudentUploads = new Map();
 
-// ---------- 목록 ----------
-router.get('/students', requireAuth, (req, res) => {
+router.get('/students', requireAuth, async (req, res) => {
   const { keyword = '', school = '', grade = '', status = 'active' } = req.query;
   const page = Math.max(1, parseInt(req.query.page) || 1);
 
   const conditions = [];
-  const params = {};
+  const params = [];
 
   if (keyword) {
-    conditions.push('(s.name LIKE @kw OR s.parent_name LIKE @kw OR s.parent_phone LIKE @kw)');
-    params.kw = `%${keyword}%`;
+    conditions.push('(s.name LIKE ? OR s.parent_name LIKE ? OR s.parent_phone LIKE ?)');
+    params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
   }
   if (school) {
-    conditions.push('s.school_name = @school');
-    params.school = school;
+    conditions.push('s.school_name = ?');
+    params.push(school);
   }
   if (grade) {
-    conditions.push('s.grade = @grade');
-    params.grade = grade;
+    conditions.push('s.grade = ?');
+    params.push(grade);
   }
   if (status && status !== 'all') {
-    conditions.push('s.status = @status');
-    params.status = status;
+    conditions.push('s.status = ?');
+    params.push(status);
   }
 
   const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
-  const totalRow = db.prepare(`SELECT COUNT(*) as cnt FROM student s ${whereClause}`).get(params);
+  const totalRow = await db.get(`SELECT COUNT(*) as cnt FROM student s ${whereClause}`, params);
   const total = totalRow.cnt;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const offset = (safePage - 1) * PAGE_SIZE;
 
-  const students = db.prepare(`
+  const students = await db.all(`
     SELECT s.*,
       (SELECT COUNT(*) FROM charge c WHERE c.student_id = s.id AND c.status='overdue') as overdue_count
     FROM student s
     ${whereClause}
     ORDER BY s.created_at DESC
-    LIMIT @limit OFFSET @offset
-  `).all({ ...params, limit: PAGE_SIZE, offset });
+    LIMIT ? OFFSET ?
+  `, [...params, PAGE_SIZE, offset]);
 
-  const schoolList = db.prepare(`SELECT DISTINCT school_name FROM student WHERE school_name IS NOT NULL ORDER BY school_name`).all();
-  const gradeList = db.prepare(`SELECT DISTINCT grade FROM student WHERE grade IS NOT NULL ORDER BY grade`).all();
+  const schoolList = await db.all(`SELECT DISTINCT school_name FROM student WHERE school_name IS NOT NULL ORDER BY school_name`);
+  const gradeList = await db.all(`SELECT DISTINCT grade FROM student WHERE grade IS NOT NULL ORDER BY grade`);
 
   res.render('students/index', {
     pageTitle: '학생 관리',
@@ -85,7 +83,6 @@ router.get('/students', requireAuth, (req, res) => {
   });
 });
 
-// ---------- 등록 폼 ----------
 router.get('/students/new', requireAuth, (req, res) => {
   res.render('students/form', {
     pageTitle: '학생 등록',
@@ -98,8 +95,7 @@ router.get('/students/new', requireAuth, (req, res) => {
   });
 });
 
-// ---------- 등록 처리 ----------
-router.post('/students', requireAuth, (req, res) => {
+router.post('/students', requireAuth, async (req, res) => {
   const { name, school_name, grade, student_phone, parent_name, parent_phone, memo } = req.body;
 
   if (!name || !parent_phone) {
@@ -114,19 +110,18 @@ router.post('/students', requireAuth, (req, res) => {
     });
   }
 
-  db.prepare(`
-    INSERT INTO student (name, school_name, grade, student_phone, parent_name, parent_phone, memo, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
-  `).run(name, school_name || null, grade || null, student_phone || null, parent_name || null, parent_phone, memo || null);
+  await db.run(
+    `INSERT INTO student (name, school_name, grade, student_phone, parent_name, parent_phone, memo, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'active')`,
+    [name, school_name || null, grade || null, student_phone || null, parent_name || null, parent_phone, memo || null]
+  );
 
   res.redirect('/students?flash=' + encodeURIComponent(`${name} 학생이 등록되었습니다.`));
 });
 
 // ============================================================
-// 엑셀 일괄등록 (업로드 → 컬럼매핑 → 미리보기 → 확정), 입금관리와 동일한 패턴
+// 엑셀 일괄등록
 // ============================================================
 
-// ---------- 업로드 폼 ----------
 router.get('/students/import', requireAuth, (req, res) => {
   res.render('students/import-upload', {
     pageTitle: '학생 명단 일괄등록',
@@ -137,7 +132,6 @@ router.get('/students/import', requireAuth, (req, res) => {
   });
 });
 
-// ---------- 업로드 처리 → 컬럼 매핑 화면으로 ----------
 router.post('/students/import', requireAuth, upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.render('students/import-upload', {
@@ -190,8 +184,7 @@ router.post('/students/import', requireAuth, upload.single('file'), async (req, 
   }
 });
 
-// ---------- 매핑 확정 → 미리보기(중복체크 포함) ----------
-router.post('/students/import/mapping', requireAuth, (req, res) => {
+router.post('/students/import/mapping', requireAuth, async (req, res) => {
   const { uploadId, col_name, col_school, col_grade, col_student_phone, col_parent_name, col_parent_phone, col_memo, has_header } = req.body;
 
   const pending = pendingStudentUploads.get(uploadId);
@@ -212,7 +205,7 @@ router.post('/students/import/mapping', requireAuth, (req, res) => {
   const hasHeader = has_header === 'on' || has_header === 'true';
 
   const { results, errors } = extractStudents(pending.rows, mapping, hasHeader);
-  const withDupCheck = checkDuplicates(results);
+  const withDupCheck = await checkDuplicates(results);
 
   pending.extracted = withDupCheck;
   pending.errors = errors;
@@ -235,8 +228,7 @@ router.post('/students/import/mapping', requireAuth, (req, res) => {
   });
 });
 
-// ---------- 최종 저장 ----------
-router.post('/students/import/confirm', requireAuth, (req, res) => {
+router.post('/students/import/confirm', requireAuth, async (req, res) => {
   const { uploadId, skip_duplicates } = req.body;
   const pending = pendingStudentUploads.get(uploadId);
 
@@ -245,16 +237,15 @@ router.post('/students/import/confirm', requireAuth, (req, res) => {
   }
 
   const skipDuplicates = skip_duplicates === 'on' || skip_duplicates === 'true';
-  const result = saveStudentsBulk(pending.extracted, skipDuplicates);
+  const result = await saveStudentsBulk(pending.extracted, skipDuplicates);
   pendingStudentUploads.delete(uploadId);
 
   const message = `${result.inserted}명 등록 완료` + (result.skipped > 0 ? ` (중복 제외 ${result.skipped}명)` : '');
   res.redirect('/students?flash=' + encodeURIComponent(message));
 });
 
-// ---------- 수정 폼 ----------
-router.get('/students/:id/edit', requireAuth, (req, res) => {
-  const student = db.prepare('SELECT * FROM student WHERE id = ?').get(req.params.id);
+router.get('/students/:id/edit', requireAuth, async (req, res) => {
+  const student = await db.get('SELECT * FROM student WHERE id = ?', [req.params.id]);
   if (!student) return res.redirect('/students?flash=' + encodeURIComponent('학생을 찾을 수 없습니다.') + '&flashType=error');
 
   res.render('students/form', {
@@ -268,13 +259,12 @@ router.get('/students/:id/edit', requireAuth, (req, res) => {
   });
 });
 
-// ---------- 수정 처리 ----------
-router.post('/students/:id', requireAuth, (req, res) => {
+router.post('/students/:id', requireAuth, async (req, res) => {
   const { name, school_name, grade, student_phone, parent_name, parent_phone, memo } = req.body;
   const id = req.params.id;
 
   if (!name || !parent_phone) {
-    const student = db.prepare('SELECT * FROM student WHERE id = ?').get(id);
+    const student = await db.get('SELECT * FROM student WHERE id = ?', [id]);
     return res.render('students/form', {
       pageTitle: '학생 정보 수정',
       active: 'students',
@@ -286,26 +276,21 @@ router.post('/students/:id', requireAuth, (req, res) => {
     });
   }
 
-  db.prepare(`
-    UPDATE student
-    SET name=?, school_name=?, grade=?, student_phone=?, parent_name=?, parent_phone=?, memo=?, updated_at=datetime('now')
-    WHERE id=?
-  `).run(name, school_name || null, grade || null, student_phone || null, parent_name || null, parent_phone, memo || null, id);
+  await db.run(
+    `UPDATE student SET name=?, school_name=?, grade=?, student_phone=?, parent_name=?, parent_phone=?, memo=?, updated_at=NOW() WHERE id=?`,
+    [name, school_name || null, grade || null, student_phone || null, parent_name || null, parent_phone, memo || null, id]
+  );
 
   res.redirect('/students?flash=' + encodeURIComponent('학생 정보가 수정되었습니다.'));
 });
 
-// ---------- 소프트 삭제 (퇴원 처리) ----------
-router.post('/students/:id/deactivate', requireAuth, (req, res) => {
-  const id = req.params.id;
-  db.prepare(`UPDATE student SET status='inactive', updated_at=datetime('now') WHERE id=?`).run(id);
+router.post('/students/:id/deactivate', requireAuth, async (req, res) => {
+  await db.run(`UPDATE student SET status='inactive', updated_at=NOW() WHERE id=?`, [req.params.id]);
   res.redirect('/students?flash=' + encodeURIComponent('퇴원 처리되었습니다.'));
 });
 
-// ---------- 복귀 처리 ----------
-router.post('/students/:id/reactivate', requireAuth, (req, res) => {
-  const id = req.params.id;
-  db.prepare(`UPDATE student SET status='active', updated_at=datetime('now') WHERE id=?`).run(id);
+router.post('/students/:id/reactivate', requireAuth, async (req, res) => {
+  await db.run(`UPDATE student SET status='active', updated_at=NOW() WHERE id=?`, [req.params.id]);
   res.redirect('/students?flash=' + encodeURIComponent('재원 상태로 복귀되었습니다.'));
 });
 

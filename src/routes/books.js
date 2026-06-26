@@ -5,45 +5,44 @@ const { requireAuth } = require('../middleware/auth');
 const router = express.Router();
 const PAGE_SIZE = 15;
 
-// ---------- 목록 ----------
-router.get('/books', requireAuth, (req, res) => {
+router.get('/books', requireAuth, async (req, res) => {
   const { keyword = '', subject = '', status = 'active' } = req.query;
   const page = Math.max(1, parseInt(req.query.page) || 1);
 
   const conditions = [];
-  const params = {};
+  const params = [];
 
   if (keyword) {
-    conditions.push('(b.name LIKE @kw OR b.publisher LIKE @kw)');
-    params.kw = `%${keyword}%`;
+    conditions.push('(b.name LIKE ? OR b.publisher LIKE ?)');
+    params.push(`%${keyword}%`, `%${keyword}%`);
   }
   if (subject) {
-    conditions.push('b.subject = @subject');
-    params.subject = subject;
+    conditions.push('b.subject = ?');
+    params.push(subject);
   }
   if (status && status !== 'all') {
-    conditions.push('b.status = @status');
-    params.status = status;
+    conditions.push('b.status = ?');
+    params.push(status);
   }
 
   const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
-  const totalRow = db.prepare(`SELECT COUNT(*) as cnt FROM book b ${whereClause}`).get(params);
+  const totalRow = await db.get(`SELECT COUNT(*) as cnt FROM book b ${whereClause}`, params);
   const total = totalRow.cnt;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const offset = (safePage - 1) * PAGE_SIZE;
 
-  const books = db.prepare(`
+  const books = await db.all(`
     SELECT b.*,
       (SELECT COUNT(*) FROM charge_item ci WHERE ci.book_id = b.id) as used_count
     FROM book b
     ${whereClause}
     ORDER BY b.subject, b.name
-    LIMIT @limit OFFSET @offset
-  `).all({ ...params, limit: PAGE_SIZE, offset });
+    LIMIT ? OFFSET ?
+  `, [...params, PAGE_SIZE, offset]);
 
-  const subjectList = db.prepare(`SELECT DISTINCT subject FROM book WHERE subject IS NOT NULL ORDER BY subject`).all();
+  const subjectList = await db.all(`SELECT DISTINCT subject FROM book WHERE subject IS NOT NULL ORDER BY subject`);
 
   res.render('books/index', {
     pageTitle: '교재 관리',
@@ -58,7 +57,6 @@ router.get('/books', requireAuth, (req, res) => {
   });
 });
 
-// ---------- 등록 폼 ----------
 router.get('/books/new', requireAuth, (req, res) => {
   res.render('books/form', {
     pageTitle: '교재 등록',
@@ -71,8 +69,7 @@ router.get('/books/new', requireAuth, (req, res) => {
   });
 });
 
-// ---------- 등록 처리 ----------
-router.post('/books', requireAuth, (req, res) => {
+router.post('/books', requireAuth, async (req, res) => {
   const { name, subject, publisher, price } = req.body;
   const priceNum = parseInt(price, 10);
 
@@ -88,17 +85,16 @@ router.post('/books', requireAuth, (req, res) => {
     });
   }
 
-  db.prepare(`
-    INSERT INTO book (name, subject, publisher, price, status)
-    VALUES (?, ?, ?, ?, 'active')
-  `).run(name, subject || null, publisher || null, priceNum);
+  await db.run(
+    `INSERT INTO book (name, subject, publisher, price, status) VALUES (?, ?, ?, ?, 'active')`,
+    [name, subject || null, publisher || null, priceNum]
+  );
 
   res.redirect('/books?flash=' + encodeURIComponent(`${name} 교재가 등록되었습니다.`));
 });
 
-// ---------- 수정 폼 ----------
-router.get('/books/:id/edit', requireAuth, (req, res) => {
-  const book = db.prepare('SELECT * FROM book WHERE id = ?').get(req.params.id);
+router.get('/books/:id/edit', requireAuth, async (req, res) => {
+  const book = await db.get('SELECT * FROM book WHERE id = ?', [req.params.id]);
   if (!book) return res.redirect('/books?flash=' + encodeURIComponent('교재를 찾을 수 없습니다.') + '&flashType=error');
 
   res.render('books/form', {
@@ -112,14 +108,13 @@ router.get('/books/:id/edit', requireAuth, (req, res) => {
   });
 });
 
-// ---------- 수정 처리 ----------
-router.post('/books/:id', requireAuth, (req, res) => {
+router.post('/books/:id', requireAuth, async (req, res) => {
   const { name, subject, publisher, price } = req.body;
   const id = req.params.id;
   const priceNum = parseInt(price, 10);
 
   if (!name || !priceNum || priceNum <= 0) {
-    const book = db.prepare('SELECT * FROM book WHERE id = ?').get(id);
+    const book = await db.get('SELECT * FROM book WHERE id = ?', [id]);
     return res.render('books/form', {
       pageTitle: '교재 정보 수정',
       active: 'books',
@@ -131,22 +126,21 @@ router.post('/books/:id', requireAuth, (req, res) => {
     });
   }
 
-  db.prepare(`
-    UPDATE book SET name=?, subject=?, publisher=?, price=?, updated_at=datetime('now') WHERE id=?
-  `).run(name, subject || null, publisher || null, priceNum, id);
+  await db.run(
+    'UPDATE book SET name=?, subject=?, publisher=?, price=?, updated_at=NOW() WHERE id=?',
+    [name, subject || null, publisher || null, priceNum, id]
+  );
 
   res.redirect('/books?flash=' + encodeURIComponent('교재 정보가 수정되었습니다. (※ 기존 청구건의 단가는 변경되지 않습니다)'));
 });
 
-// ---------- 비활성화 ----------
-router.post('/books/:id/deactivate', requireAuth, (req, res) => {
-  db.prepare(`UPDATE book SET status='inactive', updated_at=datetime('now') WHERE id=?`).run(req.params.id);
+router.post('/books/:id/deactivate', requireAuth, async (req, res) => {
+  await db.run(`UPDATE book SET status='inactive', updated_at=NOW() WHERE id=?`, [req.params.id]);
   res.redirect('/books?flash=' + encodeURIComponent('교재가 비활성화되었습니다.'));
 });
 
-// ---------- 재활성화 ----------
-router.post('/books/:id/reactivate', requireAuth, (req, res) => {
-  db.prepare(`UPDATE book SET status='active', updated_at=datetime('now') WHERE id=?`).run(req.params.id);
+router.post('/books/:id/reactivate', requireAuth, async (req, res) => {
+  await db.run(`UPDATE book SET status='active', updated_at=NOW() WHERE id=?`, [req.params.id]);
   res.redirect('/books?flash=' + encodeURIComponent('교재가 다시 활성화되었습니다.'));
 });
 

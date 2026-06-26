@@ -1,147 +1,122 @@
--- ============================================================
--- 더배움 영수학원 교재비 납부 + SMS 알림 시스템
--- DB 스키마 (SQLite)
--- 참고: DIM_SCHOOL / 학생-학교 연결 테이블은 사용하지 않음
---       (교재는 관리자가 직접 검색해서 선택하는 단순 방식)
--- ============================================================
+-- 더배움 영수학원 교재비 납부 + SMS 알림 시스템 (MySQL)
 
-PRAGMA foreign_keys = ON;
-
--- ----------------------------
--- 관리자 계정
--- ----------------------------
 CREATE TABLE IF NOT EXISTS admin_user (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  username TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
-  display_name TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'staff',   -- 'director' | 'staff'
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  is_active INTEGER NOT NULL DEFAULT 1
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(100) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  display_name VARCHAR(100) NOT NULL,
+  role VARCHAR(20) NOT NULL DEFAULT 'staff',
+  created_at DATETIME NOT NULL DEFAULT NOW(),
+  is_active TINYINT(1) NOT NULL DEFAULT 1
 );
 
--- ----------------------------
--- 학생 (학부모 연락처 포함)
--- ----------------------------
 CREATE TABLE IF NOT EXISTS student (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  school_name TEXT,                     -- 자유 입력 텍스트 (차원테이블 아님)
-  grade TEXT,                           -- 예: '중1', '고2'
-  student_phone TEXT,
-  parent_name TEXT,
-  parent_phone TEXT NOT NULL,           -- SMS 수신 대상 (필수)
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  school_name VARCHAR(100),
+  grade VARCHAR(10),
+  student_phone VARCHAR(20),
+  parent_name VARCHAR(100),
+  parent_phone VARCHAR(20) NOT NULL,
   memo TEXT,
-  status TEXT NOT NULL DEFAULT 'active', -- 'active' | 'inactive' (소프트 삭제)
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  status VARCHAR(10) NOT NULL DEFAULT 'active',
+  created_at DATETIME NOT NULL DEFAULT NOW(),
+  updated_at DATETIME NOT NULL DEFAULT NOW()
 );
 
--- ----------------------------
--- 교재 (단순 목록, 관리자가 직접 검색/선택)
--- ----------------------------
 CREATE TABLE IF NOT EXISTS book (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  subject TEXT,                         -- 과목: 영어/수학 등
-  publisher TEXT,
-  price INTEGER NOT NULL,
-  status TEXT NOT NULL DEFAULT 'active', -- 'active' | 'inactive'
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(200) NOT NULL,
+  subject VARCHAR(50),
+  publisher VARCHAR(100),
+  price INT NOT NULL,
+  status VARCHAR(10) NOT NULL DEFAULT 'active',
+  created_at DATETIME NOT NULL DEFAULT NOW(),
+  updated_at DATETIME NOT NULL DEFAULT NOW()
 );
 
--- ----------------------------
--- SMS 템플릿
--- ----------------------------
 CREATE TABLE IF NOT EXISTS sms_template (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  type TEXT NOT NULL,                   -- 'charge_notice' | 'overdue_notice'
-  name TEXT NOT NULL,
-  content TEXT NOT NULL,                -- 변수: {학생명}{교재명}{금액}{계좌}{기한}
-  is_default INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  type VARCHAR(50) NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  content TEXT NOT NULL,
+  is_default TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT NOW()
 );
 
--- ----------------------------
--- 청구 (학생 + 교재 묶음을 1건의 청구로)
--- ----------------------------
 CREATE TABLE IF NOT EXISTS charge (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  student_id INTEGER NOT NULL REFERENCES student(id),
-  total_amount INTEGER NOT NULL,        -- charge_item 합계 (비정규화 캐시)
-  due_date TEXT NOT NULL,               -- 입금기한 (YYYY-MM-DD)
-  status TEXT NOT NULL DEFAULT 'unpaid', -- 'unpaid' | 'partial' | 'paid' | 'overdue' | 'canceled'
-  created_by INTEGER REFERENCES admin_user(id),
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  student_id INT NOT NULL,
+  total_amount INT NOT NULL,
+  due_date DATE NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'unpaid',
+  created_by INT,
+  created_at DATETIME NOT NULL DEFAULT NOW(),
+  updated_at DATETIME NOT NULL DEFAULT NOW(),
+  FOREIGN KEY (student_id) REFERENCES student(id),
+  FOREIGN KEY (created_by) REFERENCES admin_user(id)
 );
 
--- 청구에 포함된 교재 상세 (청구 1건 : 교재 N개)
 CREATE TABLE IF NOT EXISTS charge_item (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  charge_id INTEGER NOT NULL REFERENCES charge(id) ON DELETE CASCADE,
-  book_id INTEGER NOT NULL REFERENCES book(id),
-  quantity INTEGER NOT NULL DEFAULT 1,
-  unit_price INTEGER NOT NULL,          -- 청구 시점 단가 (교재 단가 변경 영향 안받도록 스냅샷)
-  line_amount INTEGER NOT NULL          -- quantity * unit_price
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  charge_id INT NOT NULL,
+  book_id INT NOT NULL,
+  quantity INT NOT NULL DEFAULT 1,
+  unit_price INT NOT NULL,
+  line_amount INT NOT NULL,
+  FOREIGN KEY (charge_id) REFERENCES charge(id) ON DELETE CASCADE,
+  FOREIGN KEY (book_id) REFERENCES book(id)
 );
 
--- ----------------------------
--- 입금 거래내역 (은행 파일 업로드 결과)
--- ----------------------------
 CREATE TABLE IF NOT EXISTS payment_txn (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  txn_datetime TEXT NOT NULL,           -- 거래일시
-  depositor_name TEXT NOT NULL,         -- 입금자명
-  amount INTEGER NOT NULL,              -- 입금금액
-  memo TEXT,                            -- 거래메모 (선택)
-  source_file TEXT,                     -- 업로드된 원본 파일명
-  dedupe_key TEXT NOT NULL UNIQUE,      -- 거래일시+금액+입금자명 조합 (중복방지)
-  match_status TEXT NOT NULL DEFAULT 'unmatched', -- 'unmatched' | 'matched' | 'ignored'
-  uploaded_by INTEGER REFERENCES admin_user(id),
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  txn_datetime DATETIME NOT NULL,
+  depositor_name VARCHAR(100) NOT NULL,
+  amount INT NOT NULL,
+  memo TEXT,
+  source_file VARCHAR(255),
+  dedupe_key VARCHAR(255) NOT NULL UNIQUE,
+  match_status VARCHAR(20) NOT NULL DEFAULT 'unmatched',
+  uploaded_by INT,
+  created_at DATETIME NOT NULL DEFAULT NOW(),
+  FOREIGN KEY (uploaded_by) REFERENCES admin_user(id)
 );
 
--- 청구-입금 매칭 브릿지 테이블 (부분납/다대다 매칭 지원)
 CREATE TABLE IF NOT EXISTS charge_payment_match (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  charge_id INTEGER NOT NULL REFERENCES charge(id),
-  payment_txn_id INTEGER NOT NULL REFERENCES payment_txn(id),
-  matched_amount INTEGER NOT NULL,      -- 이 매칭으로 처리된 금액
-  match_type TEXT NOT NULL DEFAULT 'auto', -- 'auto' | 'manual'
-  matched_by INTEGER REFERENCES admin_user(id),
-  matched_at TEXT NOT NULL DEFAULT (datetime('now'))
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  charge_id INT NOT NULL,
+  payment_txn_id INT NOT NULL,
+  matched_amount INT NOT NULL,
+  match_type VARCHAR(10) NOT NULL DEFAULT 'auto',
+  matched_by INT,
+  matched_at DATETIME NOT NULL DEFAULT NOW(),
+  FOREIGN KEY (charge_id) REFERENCES charge(id),
+  FOREIGN KEY (payment_txn_id) REFERENCES payment_txn(id),
+  FOREIGN KEY (matched_by) REFERENCES admin_user(id)
 );
 
--- ----------------------------
--- SMS 발송 로그
--- ----------------------------
 CREATE TABLE IF NOT EXISTS sms_log (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  charge_id INTEGER REFERENCES charge(id),
-  student_id INTEGER NOT NULL REFERENCES student(id),
-  template_type TEXT NOT NULL,          -- 'charge_notice' | 'overdue_notice'
-  recipient_phone TEXT NOT NULL,
-  message_content TEXT NOT NULL,        -- 변수 치환된 실제 발송 내용
-  send_status TEXT NOT NULL DEFAULT 'success', -- 'success' | 'failed'
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  charge_id INT,
+  student_id INT NOT NULL,
+  template_type VARCHAR(50) NOT NULL,
+  recipient_phone VARCHAR(20) NOT NULL,
+  message_content TEXT NOT NULL,
+  send_status VARCHAR(10) NOT NULL DEFAULT 'success',
   fail_reason TEXT,
-  sent_by INTEGER REFERENCES admin_user(id),
-  sent_at TEXT NOT NULL DEFAULT (datetime('now'))
+  sent_by INT,
+  sent_at DATETIME NOT NULL DEFAULT NOW(),
+  FOREIGN KEY (charge_id) REFERENCES charge(id),
+  FOREIGN KEY (student_id) REFERENCES student(id),
+  FOREIGN KEY (sent_by) REFERENCES admin_user(id)
 );
 
--- ----------------------------
--- 앱 설정 (계좌정보, SMS API 키 등 키-값 저장)
--- ----------------------------
 CREATE TABLE IF NOT EXISTS app_setting (
-  key TEXT PRIMARY KEY,
-  value TEXT,
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  `key` VARCHAR(100) PRIMARY KEY,
+  `value` TEXT,
+  updated_at DATETIME NOT NULL DEFAULT NOW()
 );
 
--- ----------------------------
--- 인덱스
--- ----------------------------
 CREATE INDEX IF NOT EXISTS idx_student_status ON student(status);
 CREATE INDEX IF NOT EXISTS idx_student_name ON student(name);
 CREATE INDEX IF NOT EXISTS idx_book_status ON book(status);

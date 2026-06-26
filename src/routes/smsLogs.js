@@ -6,46 +6,45 @@ const { sendSms } = require('../services/sms');
 const router = express.Router();
 const PAGE_SIZE = 20;
 
-router.get('/sms-logs', requireAuth, (req, res) => {
+router.get('/sms-logs', requireAuth, async (req, res) => {
   const { keyword = '', type = '', status = '' } = req.query;
   const page = Math.max(1, parseInt(req.query.page) || 1);
 
   const conditions = [];
-  const params = {};
+  const params = [];
 
   if (keyword) {
-    conditions.push('s.name LIKE @kw');
-    params.kw = `%${keyword}%`;
+    conditions.push('s.name LIKE ?');
+    params.push(`%${keyword}%`);
   }
   if (type) {
-    conditions.push('sl.template_type = @type');
-    params.type = type;
+    conditions.push('sl.template_type = ?');
+    params.push(type);
   }
   if (status) {
-    conditions.push('sl.send_status = @status');
-    params.status = status;
+    conditions.push('sl.send_status = ?');
+    params.push(status);
   }
   const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
-  const totalRow = db.prepare(`
+  const totalRow = await db.get(`
     SELECT COUNT(*) as cnt FROM sms_log sl JOIN student s ON s.id = sl.student_id ${whereClause}
-  `).get(params);
+  `, params);
   const total = totalRow.cnt;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const offset = (safePage - 1) * PAGE_SIZE;
 
-  const logs = db.prepare(`
+  const logs = await db.all(`
     SELECT sl.*, s.name as student_name
     FROM sms_log sl
     JOIN student s ON s.id = sl.student_id
     ${whereClause}
     ORDER BY sl.sent_at DESC
-    LIMIT @limit OFFSET @offset
-  `).all({ ...params, limit: PAGE_SIZE, offset });
+    LIMIT ? OFFSET ?
+  `, [...params, PAGE_SIZE, offset]);
 
-  // 발송 유형별 / 성공실패별 통계 (전체 기준, 필터와 무관)
-  const overallStats = db.prepare(`
+  const overallStats = await db.get(`
     SELECT
       COUNT(*) as total,
       SUM(CASE WHEN send_status='success' THEN 1 ELSE 0 END) as success_count,
@@ -53,7 +52,7 @@ router.get('/sms-logs', requireAuth, (req, res) => {
       SUM(CASE WHEN template_type='charge_notice' THEN 1 ELSE 0 END) as charge_notice_count,
       SUM(CASE WHEN template_type='overdue_notice' THEN 1 ELSE 0 END) as overdue_notice_count
     FROM sms_log
-  `).get();
+  `);
 
   res.render('sms-logs/index', {
     pageTitle: 'SMS 발송 로그',
@@ -68,14 +67,13 @@ router.get('/sms-logs', requireAuth, (req, res) => {
   });
 });
 
-// ---------- 실패건 재발송 ----------
-router.post('/sms-logs/:id/resend', requireAuth, (req, res) => {
-  const log = db.prepare('SELECT * FROM sms_log WHERE id = ?').get(req.params.id);
+router.post('/sms-logs/:id/resend', requireAuth, async (req, res) => {
+  const log = await db.get('SELECT * FROM sms_log WHERE id = ?', [req.params.id]);
   if (!log) {
     return res.redirect('/sms-logs?flash=' + encodeURIComponent('로그를 찾을 수 없습니다.') + '&flashType=error');
   }
 
-  sendSms({
+  await sendSms({
     chargeId: log.charge_id,
     studentId: log.student_id,
     templateType: log.template_type,

@@ -6,14 +6,14 @@ const { getSetting, setSetting } = require('../services/sms');
 
 const router = express.Router();
 
-router.get('/settings', requireAuth, (req, res) => {
-  const accountInfo = getSetting('account_info', '');
-  const smsApiProvider = getSetting('sms_api_provider', 'aligo');
-  const smsApiKey = getSetting('sms_api_key', '');
-  const smsSenderNumber = getSetting('sms_sender_number', '');
+router.get('/settings', requireAuth, async (req, res) => {
+  const accountInfo = await getSetting('account_info', '');
+  const smsApiProvider = await getSetting('sms_api_provider', 'aligo');
+  const smsApiKey = await getSetting('sms_api_key', '');
+  const smsSenderNumber = await getSetting('sms_sender_number', '');
 
-  const templates = db.prepare('SELECT * FROM sms_template ORDER BY type').all();
-  const admins = db.prepare('SELECT id, username, display_name, role, is_active, created_at FROM admin_user ORDER BY id').all();
+  const templates = await db.all('SELECT * FROM sms_template ORDER BY type');
+  const admins = await db.all('SELECT id, username, display_name, role, is_active, created_at FROM admin_user ORDER BY id');
 
   res.render('settings/index', {
     pageTitle: '설정',
@@ -31,40 +31,36 @@ router.get('/settings', requireAuth, (req, res) => {
   });
 });
 
-// ---------- 학원 계좌정보 저장 ----------
-router.post('/settings/account', requireAuth, (req, res) => {
+router.post('/settings/account', requireAuth, async (req, res) => {
   const { account_info } = req.body;
   if (!account_info || !account_info.trim()) {
     return res.redirect('/settings?flash=' + encodeURIComponent('계좌정보를 입력해주세요.') + '&flashType=error');
   }
-  setSetting('account_info', account_info.trim());
+  await setSetting('account_info', account_info.trim());
   res.redirect('/settings?flash=' + encodeURIComponent('학원 계좌정보가 저장되었습니다. 이후 발송되는 SMS에 즉시 반영됩니다.'));
 });
 
-// ---------- SMS API 설정 저장 (실제 외부 연동은 3단계에서 처리, 여기서는 저장만) ----------
-router.post('/settings/sms-api', requireAuth, (req, res) => {
+router.post('/settings/sms-api', requireAuth, async (req, res) => {
   const { sms_api_provider, sms_api_key, sms_sender_number } = req.body;
-  setSetting('sms_api_provider', sms_api_provider || '');
-  setSetting('sms_api_key', sms_api_key || '');
-  setSetting('sms_sender_number', sms_sender_number || '');
-  res.redirect('/settings?flash=' + encodeURIComponent('SMS API 설정이 저장되었습니다. (※ 실제 외부 API 연동은 다음 단계에서 구현됩니다. 현재는 발송 시뮬레이션으로 동작합니다.)'));
+  await setSetting('sms_api_provider', sms_api_provider || '');
+  await setSetting('sms_api_key', sms_api_key || '');
+  await setSetting('sms_sender_number', sms_sender_number || '');
+  res.redirect('/settings?flash=' + encodeURIComponent('SMS API 설정이 저장되었습니다.'));
 });
 
-// ---------- 문자 템플릿 수정 ----------
-router.post('/settings/templates/:id', requireAuth, (req, res) => {
+router.post('/settings/templates/:id', requireAuth, async (req, res) => {
   const { content } = req.body;
   if (!content || !content.trim()) {
     return res.redirect('/settings?flash=' + encodeURIComponent('템플릿 내용을 입력해주세요.') + '&flashType=error');
   }
-  db.prepare('UPDATE sms_template SET content = ? WHERE id = ?').run(content, req.params.id);
+  await db.run('UPDATE sms_template SET content = ? WHERE id = ?', [content, req.params.id]);
   res.redirect('/settings?flash=' + encodeURIComponent('문자 템플릿이 저장되었습니다.'));
 });
 
-// ---------- 관리자 비밀번호 변경 (본인 계정만) ----------
-router.post('/settings/change-password', requireAuth, (req, res) => {
+router.post('/settings/change-password', requireAuth, async (req, res) => {
   const { current_password, new_password, new_password_confirm } = req.body;
 
-  const admin = db.prepare('SELECT * FROM admin_user WHERE id = ?').get(req.session.adminId);
+  const admin = await db.get('SELECT * FROM admin_user WHERE id = ?', [req.session.adminId]);
 
   if (!bcrypt.compareSync(current_password, admin.password_hash)) {
     return res.redirect('/settings?flash=' + encodeURIComponent('현재 비밀번호가 올바르지 않습니다.') + '&flashType=error');
@@ -77,7 +73,7 @@ router.post('/settings/change-password', requireAuth, (req, res) => {
   }
 
   const newHash = bcrypt.hashSync(new_password, 10);
-  db.prepare('UPDATE admin_user SET password_hash = ? WHERE id = ?').run(newHash, admin.id);
+  await db.run('UPDATE admin_user SET password_hash = ? WHERE id = ?', [newHash, admin.id]);
 
   res.redirect('/settings?flash=' + encodeURIComponent('비밀번호가 변경되었습니다.'));
 });

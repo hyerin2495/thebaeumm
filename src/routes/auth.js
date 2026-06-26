@@ -11,12 +11,13 @@ router.get('/login', (req, res) => {
   res.render('login', { error: null });
 });
 
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   const { username, password } = req.body;
 
-  const admin = db.prepare(
-    'SELECT * FROM admin_user WHERE username = ? AND is_active = 1'
-  ).get(username);
+  const admin = await db.get(
+    'SELECT * FROM admin_user WHERE username = ? AND is_active = 1',
+    [username]
+  );
 
   if (!admin || !bcrypt.compareSync(password, admin.password_hash)) {
     return res.render('login', { error: '아이디 또는 비밀번호가 올바르지 않습니다.' });

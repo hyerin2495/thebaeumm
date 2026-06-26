@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { parseUploadedFile, extractTransactions, saveAndAutoMatch, findAutoMatchCandidate } = require('../services/payment');
@@ -9,12 +10,11 @@ const { parseUploadedFile, extractTransactions, saveAndAutoMatch, findAutoMatchC
 const router = express.Router();
 const PAGE_SIZE = 20;
 
-const UPLOAD_DIR = path.join(__dirname, '..', '..', 'data', 'uploads');
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+const UPLOAD_DIR = os.tmpdir();
 
 const upload = multer({
   dest: UPLOAD_DIR,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (['.xlsx', '.xls', '.csv'].includes(ext)) cb(null, true);
@@ -22,39 +22,37 @@ const upload = multer({
   },
 });
 
-// 업로드 후 파싱된 원본 행을 잠깐 들고 있을 메모리 캐시 (세션별, 데모용 — 단일 프로세스 가정)
 const pendingUploads = new Map();
 
-// ---------- 목록 ----------
-router.get('/payments', requireAuth, (req, res) => {
+router.get('/payments', requireAuth, async (req, res) => {
   const { status = '', keyword = '' } = req.query;
   const page = Math.max(1, parseInt(req.query.page) || 1);
 
   const conditions = [];
-  const params = {};
+  const params = [];
   if (status && status !== 'all') {
-    conditions.push('match_status = @status');
-    params.status = status;
+    conditions.push('match_status = ?');
+    params.push(status);
   }
   if (keyword) {
-    conditions.push('depositor_name LIKE @kw');
-    params.kw = `%${keyword}%`;
+    conditions.push('depositor_name LIKE ?');
+    params.push(`%${keyword}%`);
   }
   const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
-  const totalRow = db.prepare(`SELECT COUNT(*) as cnt FROM payment_txn ${whereClause}`).get(params);
+  const totalRow = await db.get(`SELECT COUNT(*) as cnt FROM payment_txn ${whereClause}`, params);
   const total = totalRow.cnt;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const offset = (safePage - 1) * PAGE_SIZE;
 
-  const txns = db.prepare(`
+  const txns = await db.all(`
     SELECT * FROM payment_txn ${whereClause}
     ORDER BY txn_datetime DESC
-    LIMIT @limit OFFSET @offset
-  `).all({ ...params, limit: PAGE_SIZE, offset });
+    LIMIT ? OFFSET ?
+  `, [...params, PAGE_SIZE, offset]);
 
-  const unmatchedCount = db.prepare(`SELECT COUNT(*) as cnt FROM payment_txn WHERE match_status='unmatched'`).get();
+  const unmatchedCount = await db.get(`SELECT COUNT(*) as cnt FROM payment_txn WHERE match_status='unmatched'`);
 
   res.render('payments/index', {
     pageTitle: '입금 관리',
@@ -69,7 +67,6 @@ router.get('/payments', requireAuth, (req, res) => {
   });
 });
 
-// ---------- 업로드 폼 ----------
 router.get('/payments/upload', requireAuth, (req, res) => {
   res.render('payments/upload', {
     pageTitle: '거래내역 업로드',
@@ -80,7 +77,6 @@ router.get('/payments/upload', requireAuth, (req, res) => {
   });
 });
 
-// ---------- 업로드 처리 → 컬럼 매핑 화면으로 ----------
 router.post('/payments/upload', requireAuth, upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.render('payments/upload', {
@@ -94,7 +90,7 @@ router.post('/payments/upload', requireAuth, upload.single('file'), async (req, 
 
   try {
     const rows = await parseUploadedFile(req.file.path, req.file.originalname);
-    fs.unlinkSync(req.file.path); // 파싱 끝났으니 임시파일 삭제
+    fs.unlinkSync(req.file.path);
 
     if (rows.length === 0) {
       return res.render('payments/upload', {
@@ -108,8 +104,6 @@ router.post('/payments/upload', requireAuth, upload.single('file'), async (req, 
 
     const uploadId = `upload_${Date.now()}`;
     pendingUploads.set(uploadId, { rows, originalName: req.file.originalname });
-
-    // 5분 후 캐시 정리 (메모리 누수 방지)
     setTimeout(() => pendingUploads.delete(uploadId), 5 * 60 * 1000);
 
     res.render('payments/mapping', {
@@ -135,8 +129,7 @@ router.post('/payments/upload', requireAuth, upload.single('file'), async (req, 
   }
 });
 
-// ---------- 매핑 확정 → 미리보기 ----------
-router.post('/payments/mapping', requireAuth, (req, res) => {
+router.post('/payments/mapping', requireAuth, async (req, res) => {
   const { uploadId, col_datetime, col_depositor, col_deposit_amount, col_withdraw_amount, col_memo, has_header } = req.body;
 
   const pending = pendingUploads.get(uploadId);
@@ -155,19 +148,17 @@ router.post('/payments/mapping', requireAuth, (req, res) => {
 
   const { results, errors, skippedWithdrawals } = extractTransactions(pending.rows, mapping, hasHeader);
 
-  // 다음 단계(확정 저장)에서 쓸 수 있게 결과도 캐시에 저장
   pending.mapping = mapping;
   pending.hasHeader = hasHeader;
   pending.extracted = results;
   pending.errors = errors;
 
-  // 미리보기용: dedupe 여부 + 자동매칭 예상 결과 미리 체크
-  const previewWithDup = results.slice(0, 50).map(t => {
+  const previewWithDup = await Promise.all(results.slice(0, 50).map(async (t) => {
     const dedupeKey = `${t.txnDatetime}_${t.amount}_${t.depositorName}`;
-    const exists = db.prepare('SELECT id FROM payment_txn WHERE dedupe_key = ?').get(dedupeKey);
-    const candidate = exists ? null : findAutoMatchCandidate(t.depositorName, t.amount);
+    const exists = await db.get('SELECT id FROM payment_txn WHERE dedupe_key = ?', [dedupeKey]);
+    const candidate = exists ? null : await findAutoMatchCandidate(t.depositorName, t.amount);
     return { ...t, isDuplicate: !!exists, willAutoMatch: !!candidate };
-  });
+  }));
 
   res.render('payments/preview', {
     pageTitle: '업로드 확인',
@@ -185,8 +176,7 @@ router.post('/payments/mapping', requireAuth, (req, res) => {
   });
 });
 
-// ---------- 최종 저장 + 자동매칭 ----------
-router.post('/payments/confirm', requireAuth, (req, res) => {
+router.post('/payments/confirm', requireAuth, async (req, res) => {
   const { uploadId } = req.body;
   const pending = pendingUploads.get(uploadId);
 
@@ -194,42 +184,40 @@ router.post('/payments/confirm', requireAuth, (req, res) => {
     return res.redirect('/payments/upload?flash=' + encodeURIComponent('업로드 세션이 만료되었습니다. 다시 업로드해주세요.') + '&flashType=error');
   }
 
-  const result = saveAndAutoMatch(pending.extracted, pending.originalName, req.session.adminId);
+  const result = await saveAndAutoMatch(pending.extracted, pending.originalName, req.session.adminId);
   pendingUploads.delete(uploadId);
 
   const message = `${result.inserted}건 저장 (중복 제외 ${result.duplicated}건) · 자동매칭 ${result.autoMatched}건`;
   res.redirect('/payments?flash=' + encodeURIComponent(message));
 });
 
-// ---------- 수동 매칭 화면 (미확인 입금 1건 선택해서 청구 연결) ----------
-router.get('/payments/:id/match', requireAuth, (req, res) => {
-  const txn = db.prepare('SELECT * FROM payment_txn WHERE id = ?').get(req.params.id);
+router.get('/payments/:id/match', requireAuth, async (req, res) => {
+  const txn = await db.get('SELECT * FROM payment_txn WHERE id = ?', [req.params.id]);
   if (!txn) return res.redirect('/payments?flash=' + encodeURIComponent('거래를 찾을 수 없습니다.') + '&flashType=error');
 
   const depositorText = txn.depositor_name.replace(/\s+/g, '');
 
-  // 후보 추천 우선순위: ① 학부모전화 뒷4자리 포함 ② 학생이름 포함 ③ 학부모이름 포함 ④ 금액일치
-  // (입금자 텍스트가 보통 "학생이름+학교+학년" 형식이므로, "텍스트 안에 이름/번호가 포함되는지"로 검사한다 — 반대 방향 LIKE는 거의 매칭되지 않음)
-  const candidates = db.prepare(`
+  // MySQL: LOCATE(needle, haystack) — SQLite instr(haystack, needle)와 인자 순서 반대
+  const candidates = await db.all(`
     SELECT c.id, c.total_amount, c.due_date, c.status, s.name as student_name, s.parent_name, s.school_name,
       (CASE
-        WHEN s.parent_phone IS NOT NULL AND instr(@text, substr(s.parent_phone, -4)) > 0 THEN 1
-        WHEN length(s.name) >= 2 AND instr(@text, s.name) > 0 THEN 2
-        WHEN s.parent_name IS NOT NULL AND length(s.parent_name) >= 2 AND instr(@text, s.parent_name) > 0 THEN 3
-        WHEN c.total_amount = @amount THEN 4
+        WHEN s.parent_phone IS NOT NULL AND LOCATE(RIGHT(s.parent_phone, 4), ?) > 0 THEN 1
+        WHEN LENGTH(s.name) >= 2 AND LOCATE(s.name, ?) > 0 THEN 2
+        WHEN s.parent_name IS NOT NULL AND LENGTH(s.parent_name) >= 2 AND LOCATE(s.parent_name, ?) > 0 THEN 3
+        WHEN c.total_amount = ? THEN 4
         ELSE 9
       END) as match_rank
     FROM charge c JOIN student s ON s.id = c.student_id
     WHERE c.status IN ('unpaid', 'overdue', 'partial')
       AND (
-        (s.parent_phone IS NOT NULL AND instr(@text, substr(s.parent_phone, -4)) > 0)
-        OR (length(s.name) >= 2 AND instr(@text, s.name) > 0)
-        OR (s.parent_name IS NOT NULL AND length(s.parent_name) >= 2 AND instr(@text, s.parent_name) > 0)
-        OR c.total_amount = @amount
+        (s.parent_phone IS NOT NULL AND LOCATE(RIGHT(s.parent_phone, 4), ?) > 0)
+        OR (LENGTH(s.name) >= 2 AND LOCATE(s.name, ?) > 0)
+        OR (s.parent_name IS NOT NULL AND LENGTH(s.parent_name) >= 2 AND LOCATE(s.parent_name, ?) > 0)
+        OR c.total_amount = ?
       )
     ORDER BY match_rank ASC, c.due_date ASC
     LIMIT 20
-  `).all({ text: depositorText, amount: txn.amount });
+  `, [depositorText, depositorText, depositorText, txn.amount, depositorText, depositorText, depositorText, txn.amount]);
 
   res.render('payments/match', {
     pageTitle: '입금 매칭',
@@ -243,13 +231,12 @@ router.get('/payments/:id/match', requireAuth, (req, res) => {
   });
 });
 
-// ---------- 수동 매칭 처리 ----------
-router.post('/payments/:id/match', requireAuth, (req, res) => {
+router.post('/payments/:id/match', requireAuth, async (req, res) => {
   const { charge_id, matched_amount } = req.body;
   const txnId = req.params.id;
 
-  const txn = db.prepare('SELECT * FROM payment_txn WHERE id = ?').get(txnId);
-  const charge = db.prepare('SELECT * FROM charge WHERE id = ?').get(charge_id);
+  const txn = await db.get('SELECT * FROM payment_txn WHERE id = ?', [txnId]);
+  const charge = await db.get('SELECT * FROM charge WHERE id = ?', [charge_id]);
 
   if (!txn || !charge) {
     return res.redirect(`/payments/${txnId}/match?flash=` + encodeURIComponent('처리 중 오류가 발생했습니다.') + '&flashType=error');
@@ -257,35 +244,26 @@ router.post('/payments/:id/match', requireAuth, (req, res) => {
 
   const amount = parseInt(matched_amount, 10) || txn.amount;
 
-  db.exec('BEGIN');
-  try {
-    db.prepare(`
-      INSERT INTO charge_payment_match (charge_id, payment_txn_id, matched_amount, match_type, matched_by, matched_at)
-      VALUES (?, ?, ?, 'manual', ?, datetime('now'))
-    `).run(charge.id, txn.id, amount, req.session.adminId);
+  await db.transaction(async (conn) => {
+    await conn.run(
+      `INSERT INTO charge_payment_match (charge_id, payment_txn_id, matched_amount, match_type, matched_by, matched_at) VALUES (?, ?, ?, 'manual', ?, NOW())`,
+      [charge.id, txn.id, amount, req.session.adminId]
+    );
+    await conn.run(`UPDATE payment_txn SET match_status='matched' WHERE id=?`, [txn.id]);
 
-    db.prepare(`UPDATE payment_txn SET match_status='matched' WHERE id=?`).run(txn.id);
-
-    // 매칭 합계로 청구 상태 갱신
-    const totalMatched = db.prepare(`
-      SELECT COALESCE(SUM(matched_amount),0) as sum FROM charge_payment_match WHERE charge_id = ?
-    `).get(charge.id).sum;
-
-    const newStatus = totalMatched >= charge.total_amount ? 'paid' : 'partial';
-    db.prepare(`UPDATE charge SET status=?, updated_at=datetime('now') WHERE id=?`).run(newStatus, charge.id);
-
-    db.exec('COMMIT');
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
+    const totalMatchedRow = await conn.get(
+      'SELECT COALESCE(SUM(matched_amount),0) as sum FROM charge_payment_match WHERE charge_id = ?',
+      [charge.id]
+    );
+    const newStatus = totalMatchedRow.sum >= charge.total_amount ? 'paid' : 'partial';
+    await conn.run('UPDATE charge SET status=?, updated_at=NOW() WHERE id=?', [newStatus, charge.id]);
+  });
 
   res.redirect('/payments?flash=' + encodeURIComponent('입금이 매칭 처리되었습니다.'));
 });
 
-// ---------- 무시 처리 (잘못 들어온 거래) ----------
-router.post('/payments/:id/ignore', requireAuth, (req, res) => {
-  db.prepare(`UPDATE payment_txn SET match_status='ignored' WHERE id=?`).run(req.params.id);
+router.post('/payments/:id/ignore', requireAuth, async (req, res) => {
+  await db.run(`UPDATE payment_txn SET match_status='ignored' WHERE id=?`, [req.params.id]);
   res.redirect('/payments?flash=' + encodeURIComponent('해당 거래를 무시 처리했습니다.'));
 });
 

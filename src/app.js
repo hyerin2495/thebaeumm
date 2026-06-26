@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const path = require('path');
@@ -22,10 +23,10 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 app.use(session({
-  secret: 'daebaeum-dev-secret-key-change-in-production',
+  secret: process.env.SESSION_SECRET || 'daebaeum-dev-secret-key-change-in-production',
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 1000 * 60 * 60 * 8 }, // 8시간
+  cookie: { maxAge: 1000 * 60 * 60 * 8 },
 }));
 
 app.use('/', authRoutes);
@@ -42,7 +43,11 @@ app.use((req, res) => {
   res.status(404).send('페이지를 찾을 수 없습니다.');
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`서버 실행 중: http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`서버 실행 중: http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;
