@@ -1,10 +1,10 @@
 {
   "functions": {
-    "src/app.js": {
+    "index.js": {
       "includeFiles": "src/**"
     }
   },
   "rewrites": [
-    { "source": "/(.*)", "destination": "/src/app" }
+    { "source": "/(.*)", "destination": "/index" }
   ]
 }
