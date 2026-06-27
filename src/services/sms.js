@@ -3,13 +3,13 @@ const db = require('../db');
 const DEFAULT_ACCOUNT_INFO = '농협 123-456-789012 (더배움영수학원)';
 
 async function getSetting(key, fallback = null) {
-  const row = await db.get('SELECT `value` FROM app_setting WHERE `key` = ?', [key]);
-  return row ? row.value : fallback;
+  const row = await db.get('SELECT setting_value FROM app_setting WHERE setting_key = ?', [key]);
+  return row ? row.setting_value : fallback;
 }
 
 async function setSetting(key, value) {
   await db.run(
-    'INSERT INTO app_setting (`key`, `value`, updated_at) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`), updated_at = NOW()',
+    'INSERT INTO app_setting (setting_key, setting_value, updated_at) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = NOW()',
     [key, value]
   );
 }

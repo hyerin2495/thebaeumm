@@ -1,13 +1,11 @@
--- 더배움 영수학원 교재비 납부 + SMS 알림 시스템 (MySQL)
-
 CREATE TABLE IF NOT EXISTS admin_user (
   id INT AUTO_INCREMENT PRIMARY KEY,
   username VARCHAR(100) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
   display_name VARCHAR(100) NOT NULL,
   role VARCHAR(20) NOT NULL DEFAULT 'staff',
-  created_at DATETIME NOT NULL DEFAULT NOW(),
-  is_active TINYINT(1) NOT NULL DEFAULT 1
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS student (
@@ -44,6 +42,13 @@ CREATE TABLE IF NOT EXISTS sms_template (
   created_at DATETIME NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS app_setting (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  setting_key VARCHAR(100) NOT NULL UNIQUE,
+  setting_value TEXT,
+  updated_at DATETIME NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS charge (
   id INT AUTO_INCREMENT PRIMARY KEY,
   student_id INT NOT NULL,
@@ -52,9 +57,7 @@ CREATE TABLE IF NOT EXISTS charge (
   status VARCHAR(20) NOT NULL DEFAULT 'unpaid',
   created_by INT,
   created_at DATETIME NOT NULL DEFAULT NOW(),
-  updated_at DATETIME NOT NULL DEFAULT NOW(),
-  FOREIGN KEY (student_id) REFERENCES student(id),
-  FOREIGN KEY (created_by) REFERENCES admin_user(id)
+  updated_at DATETIME NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS charge_item (
@@ -63,9 +66,7 @@ CREATE TABLE IF NOT EXISTS charge_item (
   book_id INT NOT NULL,
   quantity INT NOT NULL DEFAULT 1,
   unit_price INT NOT NULL,
-  line_amount INT NOT NULL,
-  FOREIGN KEY (charge_id) REFERENCES charge(id) ON DELETE CASCADE,
-  FOREIGN KEY (book_id) REFERENCES book(id)
+  line_amount INT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS payment_txn (
@@ -78,8 +79,7 @@ CREATE TABLE IF NOT EXISTS payment_txn (
   dedupe_key VARCHAR(255) NOT NULL UNIQUE,
   match_status VARCHAR(20) NOT NULL DEFAULT 'unmatched',
   uploaded_by INT,
-  created_at DATETIME NOT NULL DEFAULT NOW(),
-  FOREIGN KEY (uploaded_by) REFERENCES admin_user(id)
+  created_at DATETIME NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS charge_payment_match (
@@ -89,10 +89,7 @@ CREATE TABLE IF NOT EXISTS charge_payment_match (
   matched_amount INT NOT NULL,
   match_type VARCHAR(10) NOT NULL DEFAULT 'auto',
   matched_by INT,
-  matched_at DATETIME NOT NULL DEFAULT NOW(),
-  FOREIGN KEY (charge_id) REFERENCES charge(id),
-  FOREIGN KEY (payment_txn_id) REFERENCES payment_txn(id),
-  FOREIGN KEY (matched_by) REFERENCES admin_user(id)
+  matched_at DATETIME NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS sms_log (
@@ -105,27 +102,5 @@ CREATE TABLE IF NOT EXISTS sms_log (
   send_status VARCHAR(10) NOT NULL DEFAULT 'success',
   fail_reason TEXT,
   sent_by INT,
-  sent_at DATETIME NOT NULL DEFAULT NOW(),
-  FOREIGN KEY (charge_id) REFERENCES charge(id),
-  FOREIGN KEY (student_id) REFERENCES student(id),
-  FOREIGN KEY (sent_by) REFERENCES admin_user(id)
+  sent_at DATETIME NOT NULL DEFAULT NOW()
 );
-
-CREATE TABLE IF NOT EXISTS app_setting (
-  `key` VARCHAR(100) PRIMARY KEY,
-  `value` TEXT,
-  updated_at DATETIME NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_student_status ON student(status);
-CREATE INDEX IF NOT EXISTS idx_student_name ON student(name);
-CREATE INDEX IF NOT EXISTS idx_book_status ON book(status);
-CREATE INDEX IF NOT EXISTS idx_charge_student ON charge(student_id);
-CREATE INDEX IF NOT EXISTS idx_charge_status ON charge(status);
-CREATE INDEX IF NOT EXISTS idx_charge_due_date ON charge(due_date);
-CREATE INDEX IF NOT EXISTS idx_charge_item_charge ON charge_item(charge_id);
-CREATE INDEX IF NOT EXISTS idx_payment_txn_status ON payment_txn(match_status);
-CREATE INDEX IF NOT EXISTS idx_cpm_charge ON charge_payment_match(charge_id);
-CREATE INDEX IF NOT EXISTS idx_cpm_txn ON charge_payment_match(payment_txn_id);
-CREATE INDEX IF NOT EXISTS idx_sms_log_charge ON sms_log(charge_id);
-CREATE INDEX IF NOT EXISTS idx_sms_log_student ON sms_log(student_id);
