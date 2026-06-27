@@ -29,6 +29,8 @@ app.use(session({
   cookie: { maxAge: 1000 * 60 * 60 * 8 },
 }));
 
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+
 app.use('/', authRoutes);
 app.use('/', dashboardRoutes);
 app.use('/', studentRoutes);
