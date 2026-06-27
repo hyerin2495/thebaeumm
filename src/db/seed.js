@@ -126,14 +126,14 @@ async function main() {
   // ============================================================
   await db.run(
     'INSERT INTO sms_template (type, name, content, is_default) VALUES (?, ?, ?, ?)',
-    ['charge_notice', '교재비 안내 (기본)', '[더배움 영수학원] {학생명} 학생 교재비 안내\n교재: {교재명}\n금액: {금액}원\n입금계좌: {계좌}\n입금기한: {기한}\n문의: 학원 데스크', 1]
+    ['charge_notice', '교재비 안내 (기본)', '[EduBill] {학생명} 학생 교재비 안내\n교재: {교재명}\n금액: {금액}원\n입금계좌: {계좌}\n입금기한: {기한}\n문의: 학원 데스크', 1]
   );
   await db.run(
     'INSERT INTO sms_template (type, name, content, is_default) VALUES (?, ?, ?, ?)',
-    ['overdue_notice', '미납 안내 (기본)', '[더배움 영수학원] {학생명} 학생 교재비 미납 안내\n금액: {금액}원\n입금기한이 지났습니다. 빠른 입금 부탁드립니다.\n입금계좌: {계좌}\n문의: 학원 데스크', 1]
+    ['overdue_notice', '미납 안내 (기본)', '[EduBill] {학생명} 학생 교재비 미납 안내\n금액: {금액}원\n입금기한이 지났습니다. 빠른 입금 부탁드립니다.\n입금계좌: {계좌}\n문의: 학원 데스크', 1]
   );
 
-  const ACCOUNT_INFO = '농협 123-456-789012 (더배움영수학원)';
+  const ACCOUNT_INFO = '농협 123-456-789012 (EduBill)';
   await db.run('INSERT INTO app_setting (setting_key, setting_value) VALUES (?, ?)', ['account_info', ACCOUNT_INFO]);
   await db.run('INSERT INTO app_setting (setting_key, setting_value) VALUES (?, ?)', ['sms_api_provider', 'aligo']);
   await db.run('INSERT INTO app_setting (setting_key, setting_value) VALUES (?, ?)', ['sms_api_key', '']);
@@ -241,7 +241,7 @@ async function main() {
   let smsCount = 0;
   for (const charge of charges) {
     const phone = activeStudents.find(s => s.id === charge.studentId)?.parentName;
-    const chargeMsg = `[더배움 영수학원] ${charge.studentName} 학생 교재비 안내\n금액: ${charge.totalAmount.toLocaleString()}원\n입금계좌: ${ACCOUNT_INFO}\n입금기한: ${charge.dueDate.format('YYYY-MM-DD')}`;
+    const chargeMsg = `[EduBill] ${charge.studentName} 학생 교재비 안내\n금액: ${charge.totalAmount.toLocaleString()}원\n입금계좌: ${ACCOUNT_INFO}\n입금기한: ${charge.dueDate.format('YYYY-MM-DD')}`;
     const success = faker.datatype.boolean({ probability: 0.95 });
     await db.run(
       'INSERT INTO sms_log (charge_id, student_id, template_type, recipient_phone, message_content, send_status, fail_reason, sent_by, sent_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -250,7 +250,7 @@ async function main() {
     smsCount++;
 
     if (charge.status === 'overdue' && faker.datatype.boolean({ probability: 0.7 })) {
-      const overdueMsg = `[더배움 영수학원] ${charge.studentName} 학생 교재비 미납 안내\n금액: ${charge.totalAmount.toLocaleString()}원\n입금기한이 지났습니다.\n입금계좌: ${ACCOUNT_INFO}`;
+      const overdueMsg = `[EduBill] ${charge.studentName} 학생 교재비 미납 안내\n금액: ${charge.totalAmount.toLocaleString()}원\n입금기한이 지났습니다.\n입금계좌: ${ACCOUNT_INFO}`;
       const s2 = faker.datatype.boolean({ probability: 0.95 });
       await db.run(
         'INSERT INTO sms_log (charge_id, student_id, template_type, recipient_phone, message_content, send_status, fail_reason, sent_by, sent_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',

@@ -1,6 +1,6 @@
 const db = require('../db');
 
-const DEFAULT_ACCOUNT_INFO = '농협 123-456-789012 (더배움영수학원)';
+const DEFAULT_ACCOUNT_INFO = '농협 123-456-789012 (EduBill)';
 
 async function getSetting(key, fallback = null) {
   const row = await db.get('SELECT setting_value FROM app_setting WHERE setting_key = ?', [key]);
