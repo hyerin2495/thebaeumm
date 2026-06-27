@@ -11,6 +11,7 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 5,
   timezone: '+09:00',
+  dateStrings: true,
 });
 
 const db = {
