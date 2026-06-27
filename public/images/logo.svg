@@ -1,10 +1,22 @@
 <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#15315c"/>
-      <stop offset="100%" stop-color="#1a7a72"/>
+    <linearGradient id="coinGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f5c842"/>
+      <stop offset="100%" stop-color="#e6a817"/>
+    </linearGradient>
+    <linearGradient id="shineGrad" x1="0%" y1="0%" x2="60%" y2="60%">
+      <stop offset="0%" stop-color="#fff9c4" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#f5c842" stop-opacity="0"/>
     </linearGradient>
   </defs>
-  <polygon points="20,2 35,11 35,29 20,38 5,29 5,11" fill="url(#g)"/>
-  <text x="20" y="25" font-family="Pretendard, sans-serif" font-size="13" font-weight="800" fill="#ffffff" text-anchor="middle">배움</text>
+  <!-- 동전 테두리 -->
+  <circle cx="20" cy="20" r="19" fill="#c8890a"/>
+  <!-- 동전 본체 -->
+  <circle cx="20" cy="20" r="17" fill="url(#coinGrad)"/>
+  <!-- 안쪽 원 테두리 -->
+  <circle cx="20" cy="20" r="13" fill="none" stroke="#c8890a" stroke-width="1.2"/>
+  <!-- 빛 반사 -->
+  <circle cx="20" cy="20" r="17" fill="url(#shineGrad)"/>
+  <!-- $ 기호 -->
+  <text x="20" y="26" font-family="Georgia, serif" font-size="16" font-weight="900" fill="#7a5000" text-anchor="middle">₩</text>
 </svg>
