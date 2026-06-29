@@ -1,9 +1,5 @@
 <%- include('../partials/header') %>
 
-<% if (flash) { %>
-  <div class="flash <%= flash.type %>" style="margin:0 0 16px;"><%= flash.message %></div>
-<% } %>
-
 <div class="toolbar">
   <form class="filter-bar" method="GET" action="/students" id="filterForm">
     <input type="text" name="keyword" placeholder="학생명 / 학부모명 / 연락처" value="<%= filters.keyword %>" style="min-width:180px;">
@@ -33,12 +29,25 @@
     <button type="submit" class="btn btn-secondary btn-sm">검색</button>
   </form>
   <div style="display:flex; gap:8px; flex-wrap:wrap;">
-    <button type="button" class="btn btn-secondary" id="selectSmsBtn" disabled>선택 SMS 발송 (0명)</button>
     <button type="button" class="btn btn-secondary" id="filterSmsBtn">
       조건 전체 발송 (<%= pagination.total %>명)
     </button>
     <a href="/students/import" class="btn btn-secondary">엑셀 일괄등록</a>
     <a href="/students/new" class="btn btn-primary">+ 학생 등록</a>
+  </div>
+</div>
+
+<!-- 수신자 선택 영역 (iMessage 스타일) -->
+<div id="recipientBar" style="display:none; background:#fff; border:1px solid var(--teal-500); border-radius:var(--radius-md); padding:14px 18px; margin-bottom:16px; box-shadow:0 2px 8px rgba(31,150,144,0.12);">
+  <div style="display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+    <span style="font-size:13px; font-weight:600; color:var(--text-secondary); white-space:nowrap; padding-top:4px;">받는 사람</span>
+    <div id="recipientChips" style="display:flex; flex-wrap:wrap; gap:6px; flex:1; min-width:0;"></div>
+    <button type="button" id="openSmsBtn" class="btn btn-primary btn-sm" style="white-space:nowrap;">
+      ✉ SMS 발송
+    </button>
+    <button type="button" id="clearAllBtn" class="btn btn-secondary btn-sm" style="white-space:nowrap;">
+      전체 해제
+    </button>
   </div>
 </div>
 
@@ -123,22 +132,26 @@
 </div>
 <% } %>
 
-<!-- SMS 발송 모달 -->
+<!-- SMS 작성 모달 -->
 <div id="smsModal" class="modal-overlay">
-  <div class="modal-box" style="width:520px;">
+  <div class="modal-box" style="width:540px;">
     <div class="modal-header">
-      <h3>학생 문자 발송</h3>
+      <h3>✉ 문자 발송</h3>
       <button type="button" class="modal-close" id="smsModalClose">✕</button>
     </div>
     <div class="modal-body">
-      <div id="smsRecipientInfo" style="background:#f4f6f8; border-radius:6px; padding:12px 14px; margin-bottom:16px; font-size:13px; color:var(--text-secondary); line-height:1.6;">
+
+      <!-- 받는 사람 -->
+      <div style="margin-bottom:16px;">
+        <div style="font-size:12px; font-weight:600; color:var(--text-secondary); margin-bottom:8px;">받는 사람</div>
+        <div id="modalRecipientChips" style="display:flex; flex-wrap:wrap; gap:6px; min-height:36px; background:#f4f6f8; border-radius:var(--radius-sm); padding:8px 10px;"></div>
       </div>
+
+      <!-- 메시지 -->
       <div class="form-group" style="margin-bottom:0;">
-        <label for="smsMessage">메시지 내용</label>
-        <textarea id="smsMessage" rows="6" placeholder="발송할 메시지를 입력하세요."></textarea>
-        <div class="form-help" style="margin-top:6px;">
-          <strong>{학생명}</strong> 변수를 쓰면 각 학생 이름으로 자동 치환됩니다.
-        </div>
+        <label for="smsMessage">메시지</label>
+        <textarea id="smsMessage" rows="6" placeholder="발송할 메시지를 입력하세요.&#10;&#10;예시:&#10;안녕하세요, {학생명} 학부모님.&#10;이번 달 교재비 안내드립니다."></textarea>
+        <div class="form-help" style="margin-top:6px;"><strong>{학생명}</strong> 은 각 학생 이름으로 자동 치환됩니다.</div>
       </div>
     </div>
     <div class="modal-footer">
@@ -148,7 +161,7 @@
   </div>
 </div>
 
-<!-- 발송용 hidden form -->
+<!-- 발송 form -->
 <form id="smsBulkForm" action="/students/send-sms-bulk" method="POST" style="display:none;">
   <input type="hidden" name="message" id="smsBulkMessage">
   <input type="hidden" name="send_mode" id="smsBulkMode">
@@ -158,72 +171,133 @@
   <input type="hidden" name="filter_status" value="<%= filters.status %>">
 </form>
 
+<style>
+.recipient-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--teal-500);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 10px 4px 12px;
+  border-radius: 999px;
+  cursor: default;
+}
+.recipient-chip .chip-remove {
+  background: rgba(255,255,255,0.3);
+  border: none;
+  color: #fff;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0;
+}
+.recipient-chip .chip-remove:hover { background: rgba(255,255,255,0.5); }
+.modal-recipient-chip {
+  display: inline-flex;
+  align-items: center;
+  background: var(--teal-500);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+</style>
+
 <script>
-  const smsModal = document.getElementById('smsModal');
-  const smsMessage = document.getElementById('smsMessage');
-  const smsRecipientInfo = document.getElementById('smsRecipientInfo');
-  const smsBulkForm = document.getElementById('smsBulkForm');
-  const smsBulkMode = document.getElementById('smsBulkMode');
+  const recipientBar   = document.getElementById('recipientBar');
+  const recipientChips = document.getElementById('recipientChips');
+  const modalChips     = document.getElementById('modalRecipientChips');
+  const openSmsBtn     = document.getElementById('openSmsBtn');
+  const clearAllBtn    = document.getElementById('clearAllBtn');
+  const filterSmsBtn   = document.getElementById('filterSmsBtn');
+  const smsModal       = document.getElementById('smsModal');
+  const smsMessage     = document.getElementById('smsMessage');
+  const smsBulkForm    = document.getElementById('smsBulkForm');
+  const smsBulkMode    = document.getElementById('smsBulkMode');
   const smsBulkMessage = document.getElementById('smsBulkMessage');
-  const selectSmsBtn = document.getElementById('selectSmsBtn');
-  const filterSmsBtn = document.getElementById('filterSmsBtn');
-  const checkAll = document.getElementById('checkAll');
-  const rowChecks = document.querySelectorAll('.row-check');
+  const checkAll       = document.getElementById('checkAll');
+  const rowChecks      = document.querySelectorAll('.row-check');
 
-  let currentSendMode = 'selected';
+  let sendMode = 'selected';
 
+  // ---------- 체크박스 ----------
   function getChecked() {
     return Array.from(rowChecks).filter(c => c.checked);
   }
 
-  function updateSelectBtn() {
-    const count = getChecked().length;
-    selectSmsBtn.disabled = count === 0;
-    selectSmsBtn.textContent = `선택 SMS 발송 (${count}명)`;
+  function renderChips() {
+    const checked = getChecked();
+    recipientChips.innerHTML = '';
+
+    checked.forEach(c => {
+      const chip = document.createElement('span');
+      chip.className = 'recipient-chip';
+      chip.innerHTML = `${c.dataset.name}<button class="chip-remove" data-id="${c.value}" title="제거">✕</button>`;
+      chip.querySelector('.chip-remove').addEventListener('click', () => {
+        document.querySelector(`.row-check[value="${c.value}"]`).checked = false;
+        updateAll();
+      });
+      recipientChips.appendChild(chip);
+    });
+
+    recipientBar.style.display = checked.length > 0 ? 'block' : 'none';
+    if (checkAll) checkAll.checked = rowChecks.length > 0 && Array.from(rowChecks).every(c => c.checked);
+  }
+
+  function updateAll() {
+    renderChips();
   }
 
   if (checkAll) {
     checkAll.addEventListener('change', () => {
       rowChecks.forEach(c => c.checked = checkAll.checked);
-      updateSelectBtn();
+      updateAll();
     });
   }
-  rowChecks.forEach(c => c.addEventListener('change', () => {
-    if (checkAll) checkAll.checked = Array.from(rowChecks).every(c => c.checked);
-    updateSelectBtn();
-  }));
+  rowChecks.forEach(c => c.addEventListener('change', updateAll));
 
-  selectSmsBtn.addEventListener('click', () => {
-    const checked = getChecked();
-    if (checked.length === 0) return;
-    currentSendMode = 'selected';
-    const names = checked.slice(0, 5).map(c => c.dataset.name).join(', ');
-    const extra = checked.length > 5 ? ` 외 ${checked.length - 5}명` : '';
-    smsRecipientInfo.innerHTML =
-      `<strong>발송 대상:</strong> ${names}${extra}<br>` +
-      `<span style="color:var(--teal-600); font-weight:600;">총 ${checked.length}명</span>의 학부모에게 발송됩니다.`;
-    smsMessage.value = '';
-    smsModal.classList.add('open');
-    smsMessage.focus();
+  clearAllBtn.addEventListener('click', () => {
+    rowChecks.forEach(c => c.checked = false);
+    if (checkAll) checkAll.checked = false;
+    updateAll();
   });
 
-  filterSmsBtn.addEventListener('click', () => {
-    currentSendMode = 'filter';
-    const total = <%= pagination.total %>;
-    const parts = [];
-    <% if (filters.school) { %> parts.push('학교: <%= filters.school %>'); <% } %>
-    <% if (filters.grade) { %> parts.push('학년: <%= filters.grade %>'); <% } %>
-    <% if (filters.class_name) { %> parts.push('반: <%= filters.class_name %>'); <% } %>
-    <% if (filters.status && filters.status !== 'all') { %> parts.push('<%= filters.status === "active" ? "재원중" : "퇴원" %>'); <% } %>
-    const filterDesc = parts.length ? `[${parts.join(' / ')}] ` : '[전체 조건] ';
-    smsRecipientInfo.innerHTML =
-      `<strong>발송 대상:</strong> ${filterDesc}<br>` +
-      `<span style="color:var(--teal-600); font-weight:600;">총 ${total}명</span>의 학부모에게 발송됩니다.` +
-      (total > 50 ? `<br><span style="color:var(--status-overdue-text); font-size:12px;">⚠ 대량 발송입니다. 내용을 꼭 확인하세요.</span>` : '');
+  // ---------- 선택 학생 SMS ----------
+  function openModal(mode) {
+    sendMode = mode;
     smsMessage.value = '';
+    modalChips.innerHTML = '';
+
+    if (mode === 'selected') {
+      getChecked().forEach(c => {
+        const chip = document.createElement('span');
+        chip.className = 'modal-recipient-chip';
+        chip.textContent = c.dataset.name;
+        modalChips.appendChild(chip);
+      });
+    } else {
+      const chip = document.createElement('span');
+      chip.className = 'modal-recipient-chip';
+      chip.textContent = '현재 조건 전체 <%= pagination.total %>명';
+      modalChips.appendChild(chip);
+    }
+
     smsModal.classList.add('open');
-    smsMessage.focus();
+    setTimeout(() => smsMessage.focus(), 100);
+  }
+
+  openSmsBtn.addEventListener('click', () => {
+    if (getChecked().length === 0) return;
+    openModal('selected');
   });
+
+  filterSmsBtn.addEventListener('click', () => openModal('filter'));
 
   [document.getElementById('smsModalClose'), document.getElementById('smsModalCancelBtn')].forEach(el => {
     el.addEventListener('click', () => smsModal.classList.remove('open'));
@@ -233,15 +307,14 @@
     const msg = smsMessage.value.trim();
     if (!msg) { alert('메시지를 입력해주세요.'); return; }
 
-    const count = currentSendMode === 'selected' ? getChecked().length : <%= pagination.total %>;
+    const count = sendMode === 'selected' ? getChecked().length : <%= pagination.total %>;
     if (!confirm(`${count}명에게 문자를 발송하시겠습니까?`)) return;
 
     smsBulkMessage.value = msg;
-    smsBulkMode.value = currentSendMode;
+    smsBulkMode.value = sendMode;
 
     smsBulkForm.querySelectorAll('input[name="student_ids"]').forEach(el => el.remove());
-
-    if (currentSendMode === 'selected') {
+    if (sendMode === 'selected') {
       getChecked().forEach(c => {
         const input = document.createElement('input');
         input.type = 'hidden';
