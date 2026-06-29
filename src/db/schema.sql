@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS student (
   name VARCHAR(100) NOT NULL,
   school_name VARCHAR(100),
   grade VARCHAR(10),
+  class_name VARCHAR(50),
   student_phone VARCHAR(20),
   parent_name VARCHAR(100),
   parent_phone VARCHAR(20) NOT NULL,

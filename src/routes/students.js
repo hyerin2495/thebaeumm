@@ -26,7 +26,7 @@ const upload = multer({
 const pendingStudentUploads = new Map();
 
 router.get('/students', requireAuth, async (req, res) => {
-  const { keyword = '', school = '', grade = '', status = 'active' } = req.query;
+  const { keyword = '', school = '', grade = '', class_name = '', status = 'active' } = req.query;
   const page = Math.max(1, parseInt(req.query.page) || 1);
 
   const conditions = [];
@@ -43,6 +43,10 @@ router.get('/students', requireAuth, async (req, res) => {
   if (grade) {
     conditions.push('s.grade = ?');
     params.push(grade);
+  }
+  if (class_name) {
+    conditions.push('s.class_name = ?');
+    params.push(class_name);
   }
   if (status && status !== 'all') {
     conditions.push('s.status = ?');
@@ -68,6 +72,7 @@ router.get('/students', requireAuth, async (req, res) => {
 
   const schoolList = await db.all(`SELECT DISTINCT school_name FROM student WHERE school_name IS NOT NULL ORDER BY school_name`);
   const gradeList = await db.all(`SELECT DISTINCT grade FROM student WHERE grade IS NOT NULL ORDER BY grade`);
+  const classList = await db.all(`SELECT DISTINCT class_name FROM student WHERE class_name IS NOT NULL ORDER BY class_name`);
 
   res.render('students/index', {
     pageTitle: '학생 관리',
@@ -77,7 +82,8 @@ router.get('/students', requireAuth, async (req, res) => {
     students,
     schoolList,
     gradeList,
-    filters: { keyword, school, grade, status },
+    classList,
+    filters: { keyword, school, grade, class_name, status },
     pagination: { page: safePage, totalPages, total },
     flash: req.query.flash ? { type: req.query.flashType || 'success', message: req.query.flash } : null,
   });
@@ -96,7 +102,7 @@ router.get('/students/new', requireAuth, (req, res) => {
 });
 
 router.post('/students', requireAuth, async (req, res) => {
-  const { name, school_name, grade, student_phone, parent_name, parent_phone, memo } = req.body;
+  const { name, school_name, grade, class_name, student_phone, parent_name, parent_phone, memo } = req.body;
 
   if (!name || !parent_phone) {
     return res.render('students/form', {
@@ -111,8 +117,8 @@ router.post('/students', requireAuth, async (req, res) => {
   }
 
   await db.run(
-    `INSERT INTO student (name, school_name, grade, student_phone, parent_name, parent_phone, memo, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'active')`,
-    [name, school_name || null, grade || null, student_phone || null, parent_name || null, parent_phone, memo || null]
+    `INSERT INTO student (name, school_name, grade, class_name, student_phone, parent_name, parent_phone, memo, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+    [name, school_name || null, grade || null, class_name || null, student_phone || null, parent_name || null, parent_phone, memo || null]
   );
 
   res.redirect('/students?flash=' + encodeURIComponent(`${name} 학생이 등록되었습니다.`));
@@ -244,6 +250,57 @@ router.post('/students/import/confirm', requireAuth, async (req, res) => {
   res.redirect('/students?flash=' + encodeURIComponent(message));
 });
 
+router.post('/students/send-sms-bulk', requireAuth, async (req, res) => {
+  const { message, send_mode, student_ids, filter_school, filter_grade, filter_class, filter_status } = req.body;
+  const { sendSms } = require('../services/sms');
+
+  if (!message || !message.trim()) {
+    return res.redirect('/students?flash=' + encodeURIComponent('발송할 메시지를 입력해주세요.') + '&flashType=error');
+  }
+
+  let students = [];
+
+  if (send_mode === 'filter') {
+    const conditions = [];
+    const params = [];
+    const st = filter_status || 'active';
+    if (st !== 'all') { conditions.push('status = ?'); params.push(st); }
+    if (filter_school) { conditions.push('school_name = ?'); params.push(filter_school); }
+    if (filter_grade) { conditions.push('grade = ?'); params.push(filter_grade); }
+    if (filter_class) { conditions.push('class_name = ?'); params.push(filter_class); }
+    const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+    students = await db.all(`SELECT id, name, parent_phone FROM student ${whereClause}`, params);
+  } else {
+    const ids = Array.isArray(student_ids) ? student_ids : (student_ids ? [student_ids] : []);
+    if (ids.length === 0) {
+      return res.redirect('/students?flash=' + encodeURIComponent('발송할 학생을 선택해주세요.') + '&flashType=error');
+    }
+    const placeholders = ids.map(() => '?').join(',');
+    students = await db.all(`SELECT id, name, parent_phone FROM student WHERE id IN (${placeholders})`, ids);
+  }
+
+  if (students.length === 0) {
+    return res.redirect('/students?flash=' + encodeURIComponent('발송 대상 학생이 없습니다.') + '&flashType=error');
+  }
+
+  let successCount = 0;
+  for (const student of students) {
+    if (!student.parent_phone) continue;
+    const personalizedMessage = message.trim().replace(/\{학생명\}/g, student.name);
+    await sendSms({
+      chargeId: null,
+      studentId: student.id,
+      templateType: 'custom',
+      recipientPhone: student.parent_phone,
+      messageContent: personalizedMessage,
+      sentBy: req.session.adminId,
+    });
+    successCount++;
+  }
+
+  res.redirect('/students?flash=' + encodeURIComponent(`${successCount}명의 학부모에게 문자를 발송했습니다.`));
+});
+
 router.get('/students/:id/edit', requireAuth, async (req, res) => {
   const student = await db.get('SELECT * FROM student WHERE id = ?', [req.params.id]);
   if (!student) return res.redirect('/students?flash=' + encodeURIComponent('학생을 찾을 수 없습니다.') + '&flashType=error');
@@ -260,7 +317,7 @@ router.get('/students/:id/edit', requireAuth, async (req, res) => {
 });
 
 router.post('/students/:id', requireAuth, async (req, res) => {
-  const { name, school_name, grade, student_phone, parent_name, parent_phone, memo } = req.body;
+  const { name, school_name, grade, class_name, student_phone, parent_name, parent_phone, memo } = req.body;
   const id = req.params.id;
 
   if (!name || !parent_phone) {
@@ -277,8 +334,8 @@ router.post('/students/:id', requireAuth, async (req, res) => {
   }
 
   await db.run(
-    `UPDATE student SET name=?, school_name=?, grade=?, student_phone=?, parent_name=?, parent_phone=?, memo=?, updated_at=NOW() WHERE id=?`,
-    [name, school_name || null, grade || null, student_phone || null, parent_name || null, parent_phone, memo || null, id]
+    `UPDATE student SET name=?, school_name=?, grade=?, class_name=?, student_phone=?, parent_name=?, parent_phone=?, memo=?, updated_at=NOW() WHERE id=?`,
+    [name, school_name || null, grade || null, class_name || null, student_phone || null, parent_name || null, parent_phone, memo || null, id]
   );
 
   res.redirect('/students?flash=' + encodeURIComponent('학생 정보가 수정되었습니다.'));

@@ -26,6 +26,7 @@
       <option value="">전체 유형</option>
       <option value="charge_notice" <%= filters.type === 'charge_notice' ? 'selected' : '' %>>교재비 안내</option>
       <option value="overdue_notice" <%= filters.type === 'overdue_notice' ? 'selected' : '' %>>미납 안내</option>
+      <option value="custom" <%= filters.type === 'custom' ? 'selected' : '' %>>직접 발송</option>
     </select>
     <select name="status">
       <option value="">전체 결과</option>
@@ -65,7 +66,7 @@
       <tr>
         <td style="white-space:nowrap;"><%= l.sent_at %></td>
         <td><strong><%= l.student_name %></strong></td>
-        <td class="text-muted"><%= l.template_type === 'charge_notice' ? '교재비 안내' : '미납 안내' %></td>
+        <td class="text-muted"><%= l.template_type === 'charge_notice' ? '교재비 안내' : l.template_type === 'overdue_notice' ? '미납 안내' : '직접 발송' %></td>
         <td><%= l.recipient_phone %></td>
         <td class="text-muted" style="max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<%= l.message_content %>">
           <%= l.message_content.split('\n')[0] %>

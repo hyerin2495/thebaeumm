@@ -1,8 +1,12 @@
 <%- include('../partials/header') %>
 
+<% if (flash) { %>
+  <div class="flash <%= flash.type %>" style="margin:0 0 16px;"><%= flash.message %></div>
+<% } %>
+
 <div class="toolbar">
-  <form class="filter-bar" method="GET" action="/students">
-    <input type="text" name="keyword" placeholder="학생명 / 학부모명 / 연락처 검색" value="<%= filters.keyword %>">
+  <form class="filter-bar" method="GET" action="/students" id="filterForm">
+    <input type="text" name="keyword" placeholder="학생명 / 학부모명 / 연락처" value="<%= filters.keyword %>" style="min-width:180px;">
     <select name="school">
       <option value="">전체 학교</option>
       <% schoolList.forEach(s => { %>
@@ -15,6 +19,12 @@
         <option value="<%= g.grade %>" <%= filters.grade === g.grade ? 'selected' : '' %>><%= g.grade %></option>
       <% }) %>
     </select>
+    <select name="class_name">
+      <option value="">전체 반</option>
+      <% classList.forEach(c => { %>
+        <option value="<%= c.class_name %>" <%= filters.class_name === c.class_name ? 'selected' : '' %>><%= c.class_name %></option>
+      <% }) %>
+    </select>
     <select name="status">
       <option value="active" <%= filters.status === 'active' ? 'selected' : '' %>>재원중</option>
       <option value="inactive" <%= filters.status === 'inactive' ? 'selected' : '' %>>퇴원</option>
@@ -22,7 +32,11 @@
     </select>
     <button type="submit" class="btn btn-secondary btn-sm">검색</button>
   </form>
-  <div style="display:flex; gap:8px;">
+  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+    <button type="button" class="btn btn-secondary" id="selectSmsBtn" disabled>선택 SMS 발송 (0명)</button>
+    <button type="button" class="btn btn-secondary" id="filterSmsBtn">
+      조건 전체 발송 (<%= pagination.total %>명)
+    </button>
     <a href="/students/import" class="btn btn-secondary">엑셀 일괄등록</a>
     <a href="/students/new" class="btn btn-primary">+ 학생 등록</a>
   </div>
@@ -43,9 +57,11 @@
   <table class="data-table">
     <thead>
       <tr>
+        <th class="checkbox-cell"><input type="checkbox" id="checkAll"></th>
         <th>학생명</th>
         <th>학교</th>
         <th>학년</th>
+        <th>반</th>
         <th>학부모명</th>
         <th>학부모 연락처</th>
         <th class="center">상태</th>
@@ -56,9 +72,13 @@
     <tbody>
       <% students.forEach(s => { %>
       <tr>
+        <td class="checkbox-cell">
+          <input type="checkbox" class="row-check" value="<%= s.id %>" data-name="<%= s.name %>">
+        </td>
         <td><strong><%= s.name %></strong></td>
         <td class="text-muted"><%= s.school_name || '-' %></td>
         <td class="text-muted"><%= s.grade || '-' %></td>
+        <td class="text-muted"><%= s.class_name || '-' %></td>
         <td><%= s.parent_name || '-' %></td>
         <td><%= s.parent_phone %></td>
         <td class="center">
@@ -102,5 +122,137 @@
   <% } %>
 </div>
 <% } %>
+
+<!-- SMS 발송 모달 -->
+<div id="smsModal" class="modal-overlay">
+  <div class="modal-box" style="width:520px;">
+    <div class="modal-header">
+      <h3>학생 문자 발송</h3>
+      <button type="button" class="modal-close" id="smsModalClose">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="smsRecipientInfo" style="background:#f4f6f8; border-radius:6px; padding:12px 14px; margin-bottom:16px; font-size:13px; color:var(--text-secondary); line-height:1.6;">
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label for="smsMessage">메시지 내용</label>
+        <textarea id="smsMessage" rows="6" placeholder="발송할 메시지를 입력하세요."></textarea>
+        <div class="form-help" style="margin-top:6px;">
+          <strong>{학생명}</strong> 변수를 쓰면 각 학생 이름으로 자동 치환됩니다.
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" id="smsModalCancelBtn" class="btn btn-secondary">취소</button>
+      <button type="button" id="smsModalSendBtn" class="btn btn-primary">발송하기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 발송용 hidden form -->
+<form id="smsBulkForm" action="/students/send-sms-bulk" method="POST" style="display:none;">
+  <input type="hidden" name="message" id="smsBulkMessage">
+  <input type="hidden" name="send_mode" id="smsBulkMode">
+  <input type="hidden" name="filter_school" value="<%= filters.school %>">
+  <input type="hidden" name="filter_grade" value="<%= filters.grade %>">
+  <input type="hidden" name="filter_class" value="<%= filters.class_name %>">
+  <input type="hidden" name="filter_status" value="<%= filters.status %>">
+</form>
+
+<script>
+  const smsModal = document.getElementById('smsModal');
+  const smsMessage = document.getElementById('smsMessage');
+  const smsRecipientInfo = document.getElementById('smsRecipientInfo');
+  const smsBulkForm = document.getElementById('smsBulkForm');
+  const smsBulkMode = document.getElementById('smsBulkMode');
+  const smsBulkMessage = document.getElementById('smsBulkMessage');
+  const selectSmsBtn = document.getElementById('selectSmsBtn');
+  const filterSmsBtn = document.getElementById('filterSmsBtn');
+  const checkAll = document.getElementById('checkAll');
+  const rowChecks = document.querySelectorAll('.row-check');
+
+  let currentSendMode = 'selected';
+
+  function getChecked() {
+    return Array.from(rowChecks).filter(c => c.checked);
+  }
+
+  function updateSelectBtn() {
+    const count = getChecked().length;
+    selectSmsBtn.disabled = count === 0;
+    selectSmsBtn.textContent = `선택 SMS 발송 (${count}명)`;
+  }
+
+  if (checkAll) {
+    checkAll.addEventListener('change', () => {
+      rowChecks.forEach(c => c.checked = checkAll.checked);
+      updateSelectBtn();
+    });
+  }
+  rowChecks.forEach(c => c.addEventListener('change', () => {
+    if (checkAll) checkAll.checked = Array.from(rowChecks).every(c => c.checked);
+    updateSelectBtn();
+  }));
+
+  selectSmsBtn.addEventListener('click', () => {
+    const checked = getChecked();
+    if (checked.length === 0) return;
+    currentSendMode = 'selected';
+    const names = checked.slice(0, 5).map(c => c.dataset.name).join(', ');
+    const extra = checked.length > 5 ? ` 외 ${checked.length - 5}명` : '';
+    smsRecipientInfo.innerHTML =
+      `<strong>발송 대상:</strong> ${names}${extra}<br>` +
+      `<span style="color:var(--teal-600); font-weight:600;">총 ${checked.length}명</span>의 학부모에게 발송됩니다.`;
+    smsMessage.value = '';
+    smsModal.classList.add('open');
+    smsMessage.focus();
+  });
+
+  filterSmsBtn.addEventListener('click', () => {
+    currentSendMode = 'filter';
+    const total = <%= pagination.total %>;
+    const parts = [];
+    <% if (filters.school) { %> parts.push('학교: <%= filters.school %>'); <% } %>
+    <% if (filters.grade) { %> parts.push('학년: <%= filters.grade %>'); <% } %>
+    <% if (filters.class_name) { %> parts.push('반: <%= filters.class_name %>'); <% } %>
+    <% if (filters.status && filters.status !== 'all') { %> parts.push('<%= filters.status === "active" ? "재원중" : "퇴원" %>'); <% } %>
+    const filterDesc = parts.length ? `[${parts.join(' / ')}] ` : '[전체 조건] ';
+    smsRecipientInfo.innerHTML =
+      `<strong>발송 대상:</strong> ${filterDesc}<br>` +
+      `<span style="color:var(--teal-600); font-weight:600;">총 ${total}명</span>의 학부모에게 발송됩니다.` +
+      (total > 50 ? `<br><span style="color:var(--status-overdue-text); font-size:12px;">⚠ 대량 발송입니다. 내용을 꼭 확인하세요.</span>` : '');
+    smsMessage.value = '';
+    smsModal.classList.add('open');
+    smsMessage.focus();
+  });
+
+  [document.getElementById('smsModalClose'), document.getElementById('smsModalCancelBtn')].forEach(el => {
+    el.addEventListener('click', () => smsModal.classList.remove('open'));
+  });
+
+  document.getElementById('smsModalSendBtn').addEventListener('click', () => {
+    const msg = smsMessage.value.trim();
+    if (!msg) { alert('메시지를 입력해주세요.'); return; }
+
+    const count = currentSendMode === 'selected' ? getChecked().length : <%= pagination.total %>;
+    if (!confirm(`${count}명에게 문자를 발송하시겠습니까?`)) return;
+
+    smsBulkMessage.value = msg;
+    smsBulkMode.value = currentSendMode;
+
+    smsBulkForm.querySelectorAll('input[name="student_ids"]').forEach(el => el.remove());
+
+    if (currentSendMode === 'selected') {
+      getChecked().forEach(c => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'student_ids';
+        input.value = c.value;
+        smsBulkForm.appendChild(input);
+      });
+    }
+
+    smsBulkForm.submit();
+  });
+</script>
 
 <%- include('../partials/footer') %>
